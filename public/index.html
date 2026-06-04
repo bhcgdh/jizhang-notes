@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>记账笔记</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <h1>记账笔记</h1>
+      </div>
+      <div class="file-controls">
+        <button id="toggleCsvBtn" class="secondary" type="button">更换账本</button>
+        <button id="reloadBtn" class="secondary" type="button">刷新</button>
+        <div id="csvPathPanel" class="csv-path-panel">
+          <label>账本文件<input id="csvPathInput" type="text" placeholder="F:\daysz\dfsz.csv"></label>
+          <button id="changeCsvBtn" class="secondary" type="button">切换文件</button>
+        </div>
+      </div>
+    </section>
+
+    <nav class="page-nav" aria-label="页面">
+      <button class="nav-btn active" type="button" data-page="book">记账</button>
+      <button class="nav-btn" type="button" data-page="analysis">支出分析</button>
+      <button class="nav-btn" type="button" data-page="month">月账单</button>
+      <button class="nav-btn" type="button" data-page="category">品类分析</button>
+    </nav>
+
+    <section class="page active" id="bookPage">
+      <section class="panel">
+        <h2>文字智能解析</h2>
+        <div class="parse-grid">
+          <label class="wide">记账文字<textarea id="parseText" rows="3" placeholder="例如：昨天和朋友吃火锅 128 元，备注老王请客"></textarea></label>
+          <button id="parseBtn" type="button">解析到表单</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>新增账单</h2>
+        <form id="entryForm" class="entry-grid">
+          <label>时间<input id="t" name="t" type="date" required></label>
+          <label>一级分类<select id="type" name="type" required></select></label>
+          <label>二级分类<select id="name1" name="name1" required></select></label>
+          <label>三级分类<select id="name2" name="name2" required></select></label>
+          <label>金额<input id="p" name="p" type="number" step="0.01" required></label>
+          <label class="wide">备注<input id="bak" name="bak" type="text" placeholder="none"></label>
+          <button type="submit">保存到账表</button>
+        </form>
+      </section>
+
+      <section class="stats-grid">
+        <div class="metric"><span>筛选支出</span><strong id="expenseTotal">0</strong></div>
+        <div class="metric"><span>筛选收入</span><strong id="incomeTotal">0</strong></div>
+        <div class="metric"><span>净额</span><strong id="netTotal">0</strong></div>
+        <div class="metric"><span>记录数</span><strong id="recordCount">0</strong></div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel"><h2>一级分类</h2><div id="typeChart" class="chart"></div></div>
+        <div class="panel"><h2>二级分类</h2><div id="nameChart" class="chart"></div></div>
+        <div class="panel"><h2>支出最多的 5 项</h2><div id="topName2Chart" class="chart"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>账单数据</h2>
+          <div class="filters">
+            <label>开始<input id="startDate" type="date"></label>
+            <label>结束<input id="endDate" type="date"></label>
+            <button id="weekBtn" class="secondary" type="button">本周</button>
+            <button id="saveTableBtn" type="button">保存修改</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>一级分类</th>
+                <th>二级分类</th>
+                <th>三级分类</th>
+                <th>金额</th>
+                <th>备注</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="recordBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="analysisPage">
+      <section class="stats-grid">
+        <div class="metric"><span>初始日</span><strong id="analysisStart">-</strong></div>
+        <div class="metric"><span>结束日</span><strong id="analysisEnd">-</strong></div>
+        <div class="metric"><span>总共年数</span><strong id="analysisYears">0.0</strong></div>
+        <div class="metric"><span>总支出（万元）</span><strong id="analysisTotal">0.00</strong></div>
+        <div class="metric"><span>总收入（万元）</span><strong id="analysisIncomeTotal">0.00</strong></div>
+        <div class="metric"><span>总盈余（万元）</span><strong id="analysisSurplusTotal">0.00</strong></div>
+        <div class="metric"><span>当前盈余（万元）</span><strong id="currentFundsValue">-</strong><small id="currentFundsTime">资金表未读取</small></div>
+        <div class="metric"><span>平均日支出</span><strong id="analysisDailyAvg">0</strong></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>资金表</h2>
+          <button id="toggleFundsBtn" class="secondary" type="button">更换资金表</button>
+        </div>
+        <div id="fundsPathPanel" class="inline-path-panel">
+          <label>资金表文件<input id="fundsPathInput" type="text" placeholder="F:\daysz\hisdata\mark1.xlsx"></label>
+          <button id="changeFundsBtn" class="secondary" type="button">切换资金表</button>
+        </div>
+      </section>
+
+      <section class="analysis-grid compact-charts">
+        <div class="panel">
+          <h2>年度支出趋势</h2>
+          <div id="yearTrendTotalChart" class="column-chart compact-column"></div>
+        </div>
+        <div class="panel">
+          <h2>自己支出趋势</h2>
+          <div id="yearTrendSelfChart" class="column-chart compact-column"></div>
+        </div>
+        <div class="panel">
+          <h2>去除房贷趋势</h2>
+          <div id="yearTrendNoMortgageChart" class="column-chart compact-column"></div>
+        </div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel span-2">
+          <h2>月度支出趋势</h2>
+          <div id="monthTrendLegend" class="trend-legend"></div>
+          <div id="monthTrendChart" class="pinned-chart"></div>
+        </div>
+        <div class="panel">
+          <h2>支出占比</h2>
+          <div id="categoryPieChart" class="pie-wrap"></div>
+        </div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel">
+          <h2>年度支出汇总</h2>
+          <div id="yearSummaryList" class="chart"></div>
+        </div>
+        <div class="panel">
+          <h2>月度支出汇总</h2>
+          <div class="table-wrap compact-table month-summary-table">
+            <table>
+              <thead>
+                <tr>
+                  <th><button id="monthSummaryDateSortBtn" class="sort-btn" type="button">月份 <span id="monthSummaryDateSortIcon">↓</span></button></th>
+                  <th><button id="monthSummarySortBtn" class="sort-btn" type="button">金额 <span id="monthSummarySortIcon">↓</span></button></th>
+                  <th><button id="monthSummaryCoreSortBtn" class="sort-btn" type="button">非房贷房租 <span id="monthSummaryCoreSortIcon">↕</span></button></th>
+                </tr>
+              </thead>
+              <tbody id="monthSummaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>三级分类占比排行</h2>
+          <div id="ratioList" class="chart"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>明细筛选</h2>
+        <div class="detail-filter-layout">
+          <div class="detail-filter-panel">
+            <label>开始时间<input id="analysisDetailStart" type="date"></label>
+            <label>结束时间<input id="analysisDetailEnd" type="date"></label>
+            <label>一级分类<select id="analysisDetailType"></select></label>
+            <label>二级分类<select id="analysisDetailName1"></select></label>
+            <label>三级分类<select id="analysisDetailName2"></select></label>
+            <label>最低金额<input id="analysisDetailMin" type="number" step="0.01"></label>
+            <label>最高金额<input id="analysisDetailMax" type="number" step="0.01"></label>
+            <label>备注包含<input id="analysisDetailBak" type="text" placeholder="输入关键字"></label>
+            <button id="analysisDetailApplyBtn" type="button">确认筛选</button>
+          </div>
+          <div class="table-wrap analysis-detail-table">
+            <div id="analysisDetailSummary" class="detail-summary"></div>
+            <table>
+              <thead>
+                <tr>
+                  <th><button id="analysisDetailTimeSortBtn" class="sort-btn" type="button">时间 <span id="analysisDetailTimeSortIcon">↓</span></button></th>
+                  <th><button id="analysisDetailTypeSortBtn" class="sort-btn" type="button">一级分类 <span id="analysisDetailTypeSortIcon">↕</span></button></th>
+                  <th><button id="analysisDetailName1SortBtn" class="sort-btn" type="button">二级分类 <span id="analysisDetailName1SortIcon">↕</span></button></th>
+                  <th><button id="analysisDetailName2SortBtn" class="sort-btn" type="button">三级分类 <span id="analysisDetailName2SortIcon">↕</span></button></th>
+                  <th><button id="analysisDetailAmountSortBtn" class="sort-btn" type="button">金额 <span id="analysisDetailAmountSortIcon">↕</span></button></th>
+                  <th><button id="analysisDetailBakSortBtn" class="sort-btn" type="button">备注 <span id="analysisDetailBakSortIcon">↕</span></button></th>
+                </tr>
+              </thead>
+              <tbody id="analysisDetailBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="monthPage">
+      <section class="panel">
+        <div class="section-head">
+          <h2>月账单</h2>
+          <div class="filters">
+            <label>月份<input id="monthPicker" type="month"></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <div class="metric"><span>当月支出</span><strong id="monthExpense">0</strong></div>
+        <div class="metric"><span>非房贷房租支出</span><strong id="monthCoreExpense">0</strong></div>
+        <div class="metric"><span>当月收入</span><strong id="monthIncome">0</strong></div>
+        <div class="metric"><span>当月净额</span><strong id="monthNet">0</strong></div>
+        <div class="metric"><span>当月记录</span><strong id="monthCount">0</strong></div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel">
+          <h2>当月支出占比</h2>
+          <div id="monthPieChart" class="pie-wrap"></div>
+        </div>
+        <div class="panel">
+          <h2>当月分类排名</h2>
+          <div id="monthRankList" class="chart"></div>
+        </div>
+        <div class="panel">
+          <h2>当月每日支出</h2>
+          <div id="monthDailyCalendar" class="calendar-grid"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>当月明细</h2>
+          <div class="filters">
+            <label>收支<select id="monthDetailKind">
+              <option value="income">收入</option>
+              <option value="expense">支出</option>
+              <option value="all">全部</option>
+            </select></label>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>收支</th>
+                <th>一级分类</th>
+                <th>二级分类</th>
+                <th>三级分类</th>
+                <th><button id="monthSortBtn" class="sort-btn" type="button" aria-label="按金额排序">金额 <span id="monthSortIcon">↓</span></button></th>
+                <th>备注</th>
+              </tr>
+            </thead>
+            <tbody id="monthRecordBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="categoryPage">
+      <section class="analysis-grid">
+        <div class="panel">
+          <div class="card-head">
+            <h2>自己支出二级分类</h2>
+            <span id="categorySelfName1Summary" class="summary-pill">0.0万 / 0.0%</span>
+          </div>
+          <div id="categorySelfName1" class="chart"></div>
+        </div>
+        <div class="panel">
+          <div class="card-head">
+            <h2>去除房贷后</h2>
+            <span id="categoryNoMortgageSummary" class="summary-pill">0.0万 / 0.0%</span>
+          </div>
+          <div id="categoryNoMortgage" class="chart"></div>
+        </div>
+        <div class="panel">
+          <div class="card-head">
+            <h2>去除房贷房租后</h2>
+            <span id="categoryNoMortgageRentSummary" class="summary-pill">0.0万 / 0.0%</span>
+          </div>
+          <div id="categoryNoMortgageRent" class="chart"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>筛选分析</h2>
+          <div class="filters">
+            <label>一级分类<select id="categoryTypeFilter"></select></label>
+            <label>二级分类<select id="categoryName1Filter"></select></label>
+            <label>三级分类<select id="categoryName2Filter"></select></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel">
+          <h2>自己支出三级分类</h2>
+          <div class="short-scroll"><div id="categorySelfName2" class="chart"></div></div>
+        </div>
+        <div class="panel">
+          <h2>去除房贷后三级分类</h2>
+          <div class="short-scroll"><div id="categoryNoMortgageName2" class="chart"></div></div>
+        </div>
+        <div class="panel">
+          <h2>去除房贷房租后三级分类</h2>
+          <div class="short-scroll"><div id="categoryNoMortgageRentName2" class="chart"></div></div>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <div class="metric"><span>筛选总支出</span><strong id="categoryTotal">0</strong><small id="categoryTotalPct">0.0%</small></div>
+        <div class="metric"><span>日均支出</span><strong id="categoryDailyAvg">0</strong><small id="categoryDailyPct">0.0%</small></div>
+        <div class="metric"><span>月均支出</span><strong id="categoryMonthlyAvg">0</strong><small id="categoryMonthlyPct">0.0%</small></div>
+        <div class="metric"><span>年均支出</span><strong id="categoryYearlyAvg">0</strong><small id="categoryYearlyPct">0.0%</small></div>
+      </section>
+
+      <section class="analysis-grid">
+        <div class="panel">
+          <h2>每年支出</h2>
+          <div id="categoryYearChart" class="column-chart compact-column"></div>
+        </div>
+        <div class="panel span-2">
+          <h2>年月总支出趋势</h2>
+          <div id="categoryMonthTrend" class="pinned-chart"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>年月总支出表</h2>
+        <div class="table-wrap compact-table category-month-table category-month-short">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 18%"><button id="categoryMonthDateSortBtn" class="sort-btn" type="button">年月 <span id="categoryMonthDateSortIcon">↓</span></button></th>
+                <th style="width: 20%"><button id="categoryMonthAmountSortBtn" class="sort-btn" type="button">总支出 <span id="categoryMonthAmountSortIcon">↕</span></button></th>
+                <th style="width: 20%">月均支出</th>
+                <th style="width: 24%">相比月均金额</th>
+                <th style="width: 18%">相比月均</th>
+              </tr>
+            </thead>
+            <tbody id="categoryMonthTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>筛选原始数据</h2>
+          <div class="filters">
+            <label>时间范围<select id="categoryRawMonthFilter"></select></label>
+          </div>
+        </div>
+        <div class="table-wrap category-raw-table">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 15%"><button id="categoryRawTimeSortBtn" class="sort-btn" type="button">时间 <span id="categoryRawTimeSortIcon">↓</span></button></th>
+                <th style="width: 16%"><button id="categoryRawTypeSortBtn" class="sort-btn" type="button">一级分类 <span id="categoryRawTypeSortIcon">↕</span></button></th>
+                <th style="width: 16%"><button id="categoryRawName1SortBtn" class="sort-btn" type="button">二级分类 <span id="categoryRawName1SortIcon">↕</span></button></th>
+                <th style="width: 16%"><button id="categoryRawName2SortBtn" class="sort-btn" type="button">三级分类 <span id="categoryRawName2SortIcon">↕</span></button></th>
+                <th style="width: 12%"><button id="categoryRawAmountSortBtn" class="sort-btn" type="button">费用 <span id="categoryRawAmountSortIcon">↕</span></button></th>
+                <th>备注</th>
+              </tr>
+            </thead>
+            <tbody id="categoryRawBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

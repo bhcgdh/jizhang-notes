@@ -423,6 +423,24 @@ function normalizeModelRecord(record) {
   return normalizeRecord(normalized);
 }
 
+function localDateText(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function applyRelativeInputDate(record, text) {
+  const relativeDates = [...new Set(String(text).match(/今天|昨天|前天/g) || [])];
+  const explicitDates = String(text).match(/\d{2,4}年\d{1,2}月\d{1,2}[日号]/g) || [];
+  if (relativeDates.length !== 1 || explicitDates.length) return record;
+  const offsets = { 今天: 0, 昨天: -1, 前天: -2 };
+  return { ...record, t: localDateText(offsets[relativeDates[0]]) };
+}
+
 function chineseNumberToNumber(text) {
   const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
   const units = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
@@ -485,6 +503,7 @@ async function parseEntriesFromModel(text, correction = "", correctionAttempts =
         role: "user",
         content: [
           "你是一个个人记账文本解析器，请把用户输入解析成 t,type,name1,name2,p,bak 字段，type/name1/name2 必须从给定类别中选择，只输出 JSON。",
+          `当前日期：${localDateText()}。用户输入“今天”时必须使用当前日期，“昨天”和“前天”按当前日期计算。`,
           `用户输入：${text}`,
           correction,
         ].filter(Boolean).join("\n"),
@@ -549,6 +568,7 @@ async function parseEntriesFromModel(text, correction = "", correctionAttempts =
     .map(normalizeModelRecord)
     .map(normalizeCategoryAliases)
     .map((record) => applyDefaultType(record, text, allowed))
+    .map((record) => applyRelativeInputDate(record, text))
     .map((record) => applyCategoryHint(record, text, allowed))
     .map((record) => applyInputAmount(record, text))
     .map((record) => applyInputBak(record, text));

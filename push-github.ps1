@@ -47,13 +47,15 @@ if ($LASTEXITCODE -eq 1) {
 }
 
 $proxy = "http://127.0.0.1:7897"
+$githubUser = "bhcgdh"
 $proxyListening = Get-NetTCPConnection -State Listen -LocalPort 7897 -ErrorAction SilentlyContinue
 if (-not $proxyListening) {
   throw "Local GitHub proxy is not listening on 127.0.0.1:7897."
 }
 
 Write-Host "Pushing through local proxy..."
-Run-Git -c "http.proxy=$proxy" -c "https.proxy=$proxy" push origin main
+$env:GCM_INTERACTIVE = "Never"
+Run-Git -c "credential.username=$githubUser" -c "credential.interactive=never" -c "http.proxy=$proxy" -c "https.proxy=$proxy" push origin main
 
 Write-Host "Push completed."
 Run-Git status -sb

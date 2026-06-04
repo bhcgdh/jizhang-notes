@@ -20,7 +20,7 @@ const CATEGORY_ALIASES = {
   "衣服": "衣物",
 };
 const CATEGORY_HINTS = [
-  { pattern: /甜品|甜点/, name1: "食物支出", name2: "甜点" },
+  { pattern: /甜品|甜点1/, name1: "食物支出", name2: "甜点" },
   { pattern: /衣服|衣物/, name1: "日用支出", name2: "衣物" },
   { pattern: /手机/, name1: "日用支出", name2: "电器电子" },
   { pattern: /零食/, name1: "食物支出", name2: "零食" },

@@ -169,15 +169,32 @@ function updateFormOptions(scope = document) {
   if (name2s.includes(currentName2)) name2.value = currentName2;
 }
 
-function fillEntryForm(record) {
-  $("t").value = record.t;
-  $("type").value = record.type;
-  updateFormOptions(document);
-  $("name1").value = record.name1;
-  updateFormOptions(document);
-  $("name2").value = record.name2;
-  $("p").value = record.p;
-  $("bak").value = record.bak || "none";
+function entryRowHtml(record = {}) {
+  const type = byType.includes(record.type) ? record.type : byType[0];
+  const name1s = groupOptions(CATEGORIES, 1, { 0: type });
+  const name1 = name1s.includes(record.name1) ? record.name1 : name1s[0];
+  const name2s = groupOptions(CATEGORIES, 2, { 0: type, 1: name1 });
+  const name2 = name2s.includes(record.name2) ? record.name2 : name2s[0];
+  const options = (values, selected) => values.map((value) => (
+    `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`
+  )).join("");
+
+  return `
+    <div class="entry-row">
+      <label>时间<input name="t" type="date" value="${escapeHtml(record.t || todayText())}" required></label>
+      <label>一级分类<select name="type" required>${options(byType, type)}</select></label>
+      <label>二级分类<select name="name1" required>${options(name1s, name1)}</select></label>
+      <label>三级分类<select name="name2" required>${options(name2s, name2)}</select></label>
+      <label>金额<input name="p" type="number" step="0.01" value="${escapeHtml(record.p ?? "")}" required></label>
+      <label class="wide">备注<input name="bak" type="text" value="${escapeHtml(record.bak || "none")}" placeholder="none"></label>
+      <button class="danger remove-entry-btn" type="button">移除</button>
+    </div>
+  `;
+}
+
+function fillEntryForms(records) {
+  const rows = records.length ? records : [{}];
+  $("entryForm").innerHTML = `${rows.map(entryRowHtml).join("")}<div class="entry-actions"><button type="submit">全部保存到账表</button></div>`;
 }
 
 async function requestJson(url, options = {}) {
@@ -1095,8 +1112,15 @@ function bindEvents() {
   document.querySelectorAll(".nav-btn").forEach((button) => {
     button.addEventListener("click", () => setPage(button.dataset.page));
   });
-  $("type").addEventListener("change", () => updateFormOptions(document));
-  $("name1").addEventListener("change", () => updateFormOptions(document));
+  $("entryForm").addEventListener("change", (event) => {
+    if (!event.target.matches("[name='type'], [name='name1']")) return;
+    updateFormOptions(event.target.closest(".entry-row"));
+  });
+  $("entryForm").addEventListener("click", (event) => {
+    if (!event.target.classList.contains("remove-entry-btn")) return;
+    event.target.closest(".entry-row").remove();
+    if (!$("entryForm").querySelector(".entry-row")) fillEntryForms([{}]);
+  });
   $("parseBtn").addEventListener("click", async () => {
     try {
       const text = $("parseText").value.trim();
@@ -1110,7 +1134,7 @@ function bindEvents() {
         method: "POST",
         body: JSON.stringify({ text }),
       });
-      fillEntryForm(payload.record);
+      fillEntryForms(payload.records);
       toast("已解析到表单，请确认后保存");
     } catch (error) {
       toast(error.message);
@@ -1121,11 +1145,14 @@ function bindEvents() {
   });
   $("entryForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
-    const payload = await requestJson("/api/records", { method: "POST", body: JSON.stringify(data) });
+    const records = [...event.currentTarget.querySelectorAll(".entry-row")].map((row) => (
+      Object.fromEntries(["t", "type", "name1", "name2", "p", "bak"].map((name) => (
+        [name, row.querySelector(`[name='${name}']`).value]
+      )))
+    ));
+    const payload = await requestJson("/api/records", { method: "POST", body: JSON.stringify({ records }) });
     state.records = payload.records;
-    $("bak").value = "";
-    $("p").value = "";
+    fillEntryForms([{}]);
     render();
     toast("已追加到 CSV");
   });
@@ -1281,9 +1308,8 @@ function bindEvents() {
   });
 }
 
-$("t").value = todayText();
+fillEntryForms([{}]);
 $("monthPicker").value = currentMonthText();
-updateFormOptions(document);
 setThisWeek();
 setPage("book");
 bindEvents();

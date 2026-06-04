@@ -1,0 +1,14 @@
+1. 启动 Qwen 模型 API
+
+cd F:\zz_codexs\记账笔记
+.\start-qwen-api.ps1
+
+2. 启动记账页面
+
+cd F:\zz_codexs\记账笔记
+npm run start:qwen
+
+
+http://localhost:5174
+
+如果端口被占用，会自动改为 5175、5176 等

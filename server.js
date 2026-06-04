@@ -16,6 +16,15 @@ const LLM_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const COLUMNS = ["t", "type", "name1", "name2", "p", "bak", "month", "year", "ym"];
 const EDIT_COLUMNS = ["t", "type", "name1", "name2", "p", "bak"];
+const CATEGORY_ALIASES = {
+  "衣服": "衣物",
+};
+const CATEGORY_HINTS = [
+  { pattern: /甜品|甜点/, name1: "食物支出", name2: "甜点" },
+  { pattern: /衣服|衣物/, name1: "日用支出", name2: "衣物" },
+  { pattern: /手机/, name1: "日用支出", name2: "电器电子" },
+  { pattern: /零食/, name1: "食物支出", name2: "零食" },
+];
 const CATEGORY_LINES = [
   "家里支出 医疗支出 医疗",
   "家里支出 医疗支出 保健品",
@@ -295,43 +304,128 @@ async function setFundsPath(nextPath) {
   return readFundsWorkbook();
 }
 
-async function parseEntryWithModel(text) {
+function splitLedgerText(text) {
+  const amountPattern = /(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)\s*(?:元|块)?\s*$/;
+  const datePattern = /(?:\d{2,4}年\d{1,2}月\d{1,2}[日号]|今天|昨天|前天)/;
+  const parts = text.split(/[,，;；。.\n]+/).map((part) => part.trim()).filter(Boolean);
+  const entries = [];
+  let dateContext = "";
+
+  for (const part of parts) {
+    const date = part.match(datePattern)?.[0];
+    if (date) dateContext = date;
+    if (!amountPattern.test(part)) continue;
+    entries.push(dateContext && !part.includes(dateContext) ? `${dateContext}，${part}` : part);
+  }
+
+  if (entries.length < 2) return [text];
+  return entries;
+}
+
+function countLedgerEntries(text) {
+  return splitLedgerText(text).length;
+}
+
+function applyDefaultType(record, text, allowed) {
+  if (record.type !== "家里支出" || text.includes("家里")) return record;
+  const selfType = `自己支出 ${record.name1} ${record.name2}`;
+  return allowed.has(selfType) ? { ...record, type: "自己支出" } : record;
+}
+
+function normalizeCategoryAliases(record) {
+  return {
+    ...record,
+    name1: CATEGORY_ALIASES[record.name1] || record.name1,
+    name2: CATEGORY_ALIASES[record.name2] || record.name2,
+  };
+}
+
+function normalizeModelRecord(record) {
+  const normalized = { ...record };
+  if (/^\d{2}-\d{2}-\d{2}$/.test(String(normalized.t || ""))) {
+    normalized.t = `20${normalized.t}`;
+  }
+  return normalizeRecord(normalized);
+}
+
+function chineseNumberToNumber(text) {
+  const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  const units = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
+  let total = 0;
+  let current = 0;
+  for (const char of text) {
+    if (char in digits) {
+      current = digits[char];
+    } else if (char in units) {
+      const unit = units[char];
+      if (unit === 10000) {
+        total = (total + current) * unit;
+        current = 0;
+      } else {
+        total += (current || 1) * unit;
+        current = 0;
+      }
+    }
+  }
+  return total + current;
+}
+
+function applyInputAmount(record, text) {
+  if (splitLedgerText(text).length !== 1) return record;
+  const match = text.match(/(?:花了?|消费|支出|买了?)(\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)\s*(?:元|块)?\s*$/);
+  if (!match) return record;
+  const amount = /^\d/.test(match[1]) ? Number(match[1]) : chineseNumberToNumber(match[1]);
+  return Number.isFinite(amount) && amount > 0 ? { ...record, p: String(amount) } : record;
+}
+
+function applyInputBak(record, text) {
+  if (!/(?:^[\d,，\s]+$|[,，]\d+$)/.test(record.bak) || splitLedgerText(text).length !== 1) return record;
+  const item = text
+    .replace(/^(?:\d{2,4}年\d{1,2}月\d{1,2}[日号]|今天|昨天|前天)[,，]?/, "")
+    .replace(/^(?:给)?家里/, "")
+    .replace(/^买(?:了)?/, "")
+    .replace(/花了?(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)\s*(?:元|块)?\s*$/, "")
+    .trim();
+  return item ? { ...record, bak: item } : record;
+}
+
+function applyCategoryHint(record, text, allowed) {
+  const hint = CATEGORY_HINTS.find(({ pattern }) => pattern.test(record.bak));
+  if (!hint) return record;
+  const hinted = { ...record, name1: hint.name1, name2: hint.name2 };
+  return allowed.has(`${hinted.type} ${hinted.name1} ${hinted.name2}`) ? hinted : record;
+}
+
+async function parseEntriesFromModel(text, correction = "", correctionAttempts = 0) {
   const apiKey = process.env.OPENAI_API_KEY;
   const isLocalModel = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(LLM_BASE_URL);
   if (!apiKey && !isLocalModel) {
     throw new Error("未配置 OPENAI_API_KEY，无法调用大模型解析");
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const response = await fetch(`${LLM_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey || "ollama"}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: LLM_MODEL,
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: [
-            "你是记账文本解析器，只返回 JSON。",
-            "从用户文字中提取 t,type,name1,name2,p,bak。",
-            `今天日期是 ${today}，没有明确日期时使用今天。昨天、前天等相对日期以今天为基准。`,
-            "type/name1/name2 必须从允许分类中选择完全一致的一组。",
-            "p 只保留数字金额，不带货币符号。bak 是简短备注，没有备注用 none。",
-            `允许分类:\n${CATEGORY_LINES.join("\n")}`,
-          ].join("\n"),
-        },
-        { role: "user", content: text },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "ledger_entry",
-          strict: true,
-          schema: {
+  const requestBody = {
+    model: LLM_MODEL,
+    messages: [
+      {
+        role: "user",
+        content: [
+          "你是一个个人记账文本解析器，请把用户输入解析成 t,type,name1,name2,p,bak 字段，type/name1/name2 必须从给定类别中选择，只输出 JSON。",
+          `用户输入：${text}`,
+          correction,
+        ].filter(Boolean).join("\n"),
+      },
+    ],
+  };
+
+  if (!isLocalModel) {
+    requestBody.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: "ledger_entries",
+        strict: true,
+        schema: {
+          type: "array",
+          items: {
             type: "object",
             additionalProperties: false,
             properties: {
@@ -346,7 +440,16 @@ async function parseEntryWithModel(text) {
           },
         },
       },
-    }),
+    };
+  }
+
+  const response = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey || "ollama"}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
   });
 
   const payload = await response.json();
@@ -356,12 +459,51 @@ async function parseEntryWithModel(text) {
 
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("大模型没有返回解析结果");
-  const parsed = normalizeRecord(JSON.parse(content));
-  const allowed = new Set(CATEGORY_LINES);
-  if (!allowed.has(`${parsed.type} ${parsed.name1} ${parsed.name2}`)) {
-    throw new Error("大模型返回的分类不在允许列表中");
+  let rawRecords;
+  try {
+    const jsonText = content.match(/\[[\s\S]*\]/)?.[0] || content.match(/\{[\s\S]*\}/)?.[0];
+    const parsed = JSON.parse(jsonText);
+    rawRecords = Array.isArray(parsed) ? parsed : Array.isArray(parsed.records) ? parsed.records : [parsed];
+  } catch {
+    rawRecords = [...content.matchAll(/\{[^{}]*\}/g)].map((match) => JSON.parse(match[0]));
   }
-  return parsed;
+  if (!rawRecords.length) throw new Error("大模型返回的内容不是 JSON");
+
+  const allowed = new Set(CATEGORY_LINES);
+  const records = rawRecords
+    .map(normalizeModelRecord)
+    .map(normalizeCategoryAliases)
+    .map((record) => applyDefaultType(record, text, allowed))
+    .map((record) => applyCategoryHint(record, text, allowed))
+    .map((record) => applyInputAmount(record, text))
+    .map((record) => applyInputBak(record, text));
+  for (const record of records) {
+    if (!allowed.has(`${record.type} ${record.name1} ${record.name2}`)) {
+      const invalid = `${record.type} ${record.name1} ${record.name2}`;
+      if (correctionAttempts < 2) {
+        const typeOptions = CATEGORY_LINES.filter((line) => line.startsWith(`${record.type} `));
+        return parseEntriesFromModel(text, [
+          `上次返回的分类组合“${invalid}”无效，请修正后重新输出全部记录。`,
+          `允许分类组合：\n${typeOptions.join("\n")}`,
+        ].join("\n"), correctionAttempts + 1);
+      }
+      throw new Error(`大模型返回的分类不在允许列表中：${invalid}`);
+    }
+  }
+  return records;
+}
+
+async function parseEntryWithModel(text) {
+  const parts = splitLedgerText(text);
+  try {
+    const whole = await parseEntriesFromModel(text);
+    if (parts.length === 1 || whole.length >= countLedgerEntries(text)) return whole;
+  } catch (error) {
+    if (parts.length === 1) throw error;
+  }
+
+  const parsed = await Promise.all(parts.map(parseEntriesFromModel));
+  return parsed.flat();
 }
 
 function sendJson(res, status, payload) {
@@ -442,7 +584,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/records") {
       const payload = JSON.parse(await readBody(req));
       const records = readRecords();
-      records.push(normalizeRecord(payload));
+      const additions = Array.isArray(payload.records) ? payload.records : [payload];
+      records.push(...additions.map(normalizeRecord));
       writeRecords(records);
       sendJson(res, 200, { ok: true, records: readRecords() });
       return;
@@ -452,7 +595,7 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(await readBody(req));
       const text = String(payload.text || "").trim();
       if (!text) throw new Error("请输入需要解析的记账文字");
-      sendJson(res, 200, { record: await parseEntryWithModel(text) });
+      sendJson(res, 200, { records: await parseEntryWithModel(text) });
       return;
     }
 
@@ -475,25 +618,21 @@ const server = http.createServer(async (req, res) => {
 //  console.log(`CSV: ${csvPath}`);
 //});
 
-// 递归尝试启动
 function startServer(port) {
-    server.listen(port, () => {
-        console.log(`记账笔记已启动: http://localhost:${port}`);
-        // 如果你的 csvPath 是在这里定义的，保持原样输出
-        // console.log(`CSV: ${csvPath}`);
-    });
+  server.once("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`端口 ${port} 已被占用，尝试端口 ${port + 1}...`);
+      startServer(port + 1);
+    } else {
+      console.error("服务器启动错误:", err);
+    }
+  });
 
-    server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-            console.log(`⚠️ 端口 ${port} 已被占用，尝试端口 ${port + 1}...`);
-            startServer(port + 1);
-        } else {
-            console.error('服务器启动错误:', err);
-        }
-    });
+  server.listen(port, () => {
+    if (server.address()?.port === port) {
+      console.log(`记账笔记已启动: http://localhost:${port}`);
+    }
+  });
 }
 
-// 启动
 startServer(BASE_PORT);
-
-

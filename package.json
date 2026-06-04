@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:qwen": "set OPENAI_BASE_URL=http://127.0.0.1:8001/v1&& set OPENAI_MODEL=gpt-3.5-turbo&& node server.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"

@@ -2,6 +2,38 @@
 
 本文档用于将 `F:\zz_codexs\记账笔记` 的更新提交并推送到 GitHub。
 
+## 推荐：一条命令自动推送
+
+项目根目录提供了自动推送脚本：
+
+```powershell
+cd F:\zz_codexs\记账笔记
+.\push-github.ps1
+```
+
+也可以传入提交说明：
+
+```powershell
+.\push-github.ps1 -Message "Update bookkeeping parser"
+```
+
+在 Cmder 中可以直接运行：
+
+```bat
+push-github.cmd
+```
+
+也可以双击 `push-github.cmd`。脚本会自动执行：
+
+1. `git diff --check`
+2. JavaScript 语法检查
+3. `git add -A`
+4. 创建提交；没有新修改时跳过提交
+5. 通过 `127.0.0.1:7897` 代理推送 `main`
+6. 显示最终 Git 状态和最新提交
+
+该脚本会提交当前项目中的全部未提交修改。执行前仍应确认项目目录中没有不需要上传的文件。
+
 仓库信息：
 
 ```text

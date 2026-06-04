@@ -15,18 +15,26 @@ function Run-Git {
 Write-Host "Checking changes..."
 Run-Git diff --check
 
-# 可选：检查 JS 语法
 if (Test-Path "server.js") {
   & node --check server.js
   if ($LASTEXITCODE -ne 0) { throw "server.js syntax check failed." }
 }
 if (Test-Path "public\app.js") {
   & node --check public\app.js
-  if ($LASTEXITCODE -ne 0) { throw "public\app.js syntax check failed." }
+  if ($LASTEXITCODE -ne 0) { throw "public/app.js syntax check failed." }
 }
 
-Write-Host "Staging changes..."
-Run-Git add -A
+Write-Host "Staging changes (excluding data folders)..."
+Run-Git add --all -- .
+
+$stagedDataFiles = & git diff --cached --name-only -- datas data
+if ($LASTEXITCODE -ne 0) {
+  throw "Unable to inspect staged data files."
+}
+if ($stagedDataFiles) {
+  & git restore --staged -- datas data
+  throw "Refusing to commit data files: $($stagedDataFiles -join ', ')"
+}
 
 & git diff --cached --quiet
 if ($LASTEXITCODE -eq 1) {
@@ -38,31 +46,14 @@ if ($LASTEXITCODE -eq 1) {
   Write-Host "No new changes to commit. Pushing existing commits."
 }
 
-# ---------- 代理配置（与原来相同）----------
 $proxy = "http://127.0.0.1:7897"
 $proxyListening = Get-NetTCPConnection -State Listen -LocalPort 7897 -ErrorAction SilentlyContinue
 if (-not $proxyListening) {
   throw "Local GitHub proxy is not listening on 127.0.0.1:7897."
 }
 
-# ---------- 使用 Personal Access Token 推送 ----------
-$token = $env:GITHUB_TOKEN
-if (-not $token) {
-  Write-Host "Warning: Environment variable GITHUB_TOKEN not set. Falling back to regular push."
-  Run-Git -c "http.proxy=$proxy" -c "https.proxy=$proxy" push origin main
-} else {
-  # 获取当前 origin 的 HTTPS URL
-  $remoteUrl = Run-Git config --get remote.origin.url
-  if ($remoteUrl -match "https://github\.com/(.+?)(\.git)?$") {
-    $repoPath = $matches[1]
-    $authUrl = "https://oauth2:$token@github.com/$repoPath"
-    Write-Host "Pushing using token-based authentication..."
-    Run-Git -c "http.proxy=$proxy" -c "https.proxy=$proxy" push $authUrl main
-  } else {
-    Write-Host "Remote origin is not an HTTPS GitHub URL. Falling back to regular push."
-    Run-Git -c "http.proxy=$proxy" -c "https.proxy=$proxy" push origin main
-  }
-}
+Write-Host "Pushing through local proxy..."
+Run-Git -c "http.proxy=$proxy" -c "https.proxy=$proxy" push origin main
 
 Write-Host "Push completed."
 Run-Git status -sb

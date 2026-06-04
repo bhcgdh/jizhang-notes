@@ -25,7 +25,7 @@ const CATEGORY_HINTS = [
   { pattern: /手机/, name1: "日用支出", name2: "电器电子" },
   { pattern: /零食/, name1: "食物支出", name2: "零食" },
 ];
-const CATEGORY_LINES = [
+const DEFAULT_CATEGORY_LINES = [
   "家里支出 医疗支出 医疗",
   "家里支出 医疗支出 保健品",
   "家里支出 固定支出 生活费",
@@ -94,6 +94,80 @@ const CATEGORY_LINES = [
   "自己收入 红包收入 none",
   "自己收入 股票 none",
 ];
+let categoryLines = [...DEFAULT_CATEGORY_LINES];
+
+function categoriesPath() {
+  return path.join(path.dirname(csvPath), `${path.basename(csvPath, path.extname(csvPath))}.categories.json`);
+}
+
+function loadCategories() {
+  const filePath = categoriesPath();
+  if (!fs.existsSync(filePath)) {
+    categoryLines = [...DEFAULT_CATEGORY_LINES];
+    return;
+  }
+
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!Array.isArray(parsed) || !parsed.length || parsed.some((row) => !Array.isArray(row) || row.length !== 3)) {
+    throw new Error("分类配置文件格式无效");
+  }
+  categoryLines = parsed.map((row) => row.map((value) => String(value).trim()).join(" "));
+}
+
+function nextBackupPath(filePath) {
+  const directory = path.dirname(filePath);
+  const extension = path.extname(filePath);
+  const baseName = path.basename(filePath, extension).replace(/_\d{2}$/, "");
+  for (let index = 1; index < 100; index += 1) {
+    const candidate = path.join(directory, `${baseName}_${String(index).padStart(2, "0")}${extension}`);
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error("备份文件数量已达到上限");
+}
+
+function updateCategories(payload) {
+  if (!Array.isArray(payload.rows) || !payload.rows.length) throw new Error("分类列表不能为空");
+
+  const rows = payload.rows.map((row) => ({
+    original: Array.isArray(row.original) ? row.original.map((value) => String(value).trim()) : null,
+    values: Array.isArray(row.values) ? row.values.map((value) => String(value).trim()) : [],
+  }));
+  if (rows.some((row) => row.values.length !== 3 || row.values.some((value) => !value || /\s/.test(value)))) {
+    throw new Error("三级分类都不能为空，且不能包含空格");
+  }
+
+  const nextKeys = rows.map((row) => row.values.join(" "));
+  if (new Set(nextKeys).size !== nextKeys.length) throw new Error("分类组合不能重复");
+
+  const originalKeys = new Set(categoryLines);
+  const submittedOriginalKeys = new Set(rows.filter((row) => row.original?.length === 3).map((row) => row.original.join(" ")));
+  const hasDeletedCategories = [...originalKeys].some((key) => !submittedOriginalKeys.has(key));
+  const hasRenamedCategories = rows.some((row) => row.original?.length === 3 && row.original.join(" ") !== row.values.join(" "));
+  const affectsCsv = hasDeletedCategories || hasRenamedCategories;
+
+  const mapping = new Map(rows.filter((row) => row.original?.length === 3).map((row) => [row.original.join(" "), row.values]));
+  let records = null;
+  let backupPath = null;
+  if (affectsCsv) {
+    records = readRecords().map((record) => {
+      const key = `${record.type} ${record.name1} ${record.name2}`;
+      const replacement = mapping.get(key);
+      if (replacement) {
+        return { ...record, type: replacement[0], name1: replacement[1], name2: replacement[2] };
+      }
+      if (!nextKeys.includes(key)) throw new Error(`分类仍被账单使用，不能直接删除：${key}`);
+      return record;
+    });
+
+    ensureCsvFile();
+    backupPath = nextBackupPath(csvPath);
+    fs.copyFileSync(csvPath, backupPath);
+  }
+  fs.writeFileSync(categoriesPath(), `${JSON.stringify(rows.map((row) => row.values), null, 2)}\n`, "utf8");
+  categoryLines = nextKeys;
+  if (records) writeRecords(records);
+  return { backupPath, categories: rows.map((row) => row.values), records: records ? readRecords() : null };
+}
 
 function ensureCsvFile() {
   fs.mkdirSync(path.dirname(csvPath), { recursive: true });
@@ -212,6 +286,7 @@ function setCsvPath(nextPath) {
   if (path.extname(clean).toLowerCase() !== ".csv") throw new Error("账本文件必须是 CSV 文件");
   csvPath = path.resolve(clean);
   ensureCsvFile();
+  loadCategories();
   return csvPath;
 }
 
@@ -469,7 +544,7 @@ async function parseEntriesFromModel(text, correction = "", correctionAttempts =
   }
   if (!rawRecords.length) throw new Error("大模型返回的内容不是 JSON");
 
-  const allowed = new Set(CATEGORY_LINES);
+  const allowed = new Set(categoryLines);
   const records = rawRecords
     .map(normalizeModelRecord)
     .map(normalizeCategoryAliases)
@@ -481,7 +556,7 @@ async function parseEntriesFromModel(text, correction = "", correctionAttempts =
     if (!allowed.has(`${record.type} ${record.name1} ${record.name2}`)) {
       const invalid = `${record.type} ${record.name1} ${record.name2}`;
       if (correctionAttempts < 2) {
-        const typeOptions = CATEGORY_LINES.filter((line) => line.startsWith(`${record.type} `));
+        const typeOptions = categoryLines.filter((line) => line.startsWith(`${record.type} `));
         return parseEntriesFromModel(text, [
           `上次返回的分类组合“${invalid}”无效，请修正后重新输出全部记录。`,
           `允许分类组合：\n${typeOptions.join("\n")}`,
@@ -564,6 +639,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/categories") {
+      sendJson(res, 200, { categories: categoryLines.map((line) => line.split(" ")) });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/funds") {
       sendJson(res, 200, { funds: await readFundsWorkbook() });
       return;
@@ -596,6 +676,12 @@ const server = http.createServer(async (req, res) => {
       const text = String(payload.text || "").trim();
       if (!text) throw new Error("请输入需要解析的记账文字");
       sendJson(res, 200, { records: await parseEntryWithModel(text) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/categories") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, updateCategories(payload));
       return;
     }
 
@@ -635,4 +721,5 @@ function startServer(port) {
   });
 }
 
+loadCategories();
 startServer(BASE_PORT);

@@ -583,6 +583,38 @@ td .delete-btn { min-height: 34px; }
   font-variant-numeric: tabular-nums;
 }
 
+.category-existing-table {
+  max-height: 760px;
+}
+
+.category-existing-table,
+.category-add-table {
+  overflow: auto;
+}
+
+.category-existing-table table,
+.category-add-table table {
+  min-width: 720px;
+}
+
+.category-existing-table th,
+.category-existing-table td,
+.category-add-table th,
+.category-add-table td {
+  padding: 7px;
+}
+
+.category-existing-table input,
+.category-add-table input {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.category-existing-table .delete-category-btn,
+.category-add-table .delete-category-btn {
+  min-height: 34px;
+}
+
 .compact-table table {
   min-width: 0;
 }

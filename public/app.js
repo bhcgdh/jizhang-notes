@@ -1,4 +1,4 @@
-const CATEGORIES = [
+let CATEGORIES = [
   ["家里支出", "医疗支出", "医疗"],
   ["家里支出", "医疗支出", "保健品"],
   ["家里支出", "固定支出", "生活费"],
@@ -81,8 +81,10 @@ const state = {
   categoryRawMonth: "all",
   categoryRawSort: { key: "t", dir: "desc" },
   categoryFilter: { type: "自己支出", name1: "all", name2: "all" },
+  categoryExistingRows: [],
+  categoryAddRows: [["", "", ""]],
 };
-const byType = groupOptions(CATEGORIES, 0);
+let byType = groupOptions(CATEGORIES, 0);
 
 const $ = (id) => document.getElementById(id);
 const formatMoney = (value) => Number(value || 0).toFixed(2);
@@ -220,6 +222,56 @@ async function loadRecords() {
   render();
 }
 
+function categoryManagerRowHtml(row, index, source) {
+  return `
+    <tr data-index="${index}">
+      <td><input data-level="0" value="${escapeHtml(row.values[0] || "")}" placeholder="一级分类"></td>
+      <td><input data-level="1" value="${escapeHtml(row.values[1] || "")}" placeholder="二级分类"></td>
+      <td><input data-level="2" value="${escapeHtml(row.values[2] || "")}" placeholder="三级分类"></td>
+      <td><button class="danger delete-category-btn" data-source="${source}" type="button">删除</button></td>
+    </tr>
+  `;
+}
+
+function renderCategoryManager() {
+  $("categoryAddBody").innerHTML = state.categoryAddRows.map((values, index) => (
+    categoryManagerRowHtml({ values }, index, "add")
+  )).join("");
+  $("categoryExistingBody").innerHTML = state.categoryExistingRows.map((row, index) => (
+    categoryManagerRowHtml(row, index, "existing")
+  )).join("");
+}
+
+async function loadCategories() {
+  const payload = await requestJson("/api/categories");
+  CATEGORIES = payload.categories;
+  byType = groupOptions(CATEGORIES, 0);
+  state.categoryExistingRows = CATEGORIES.map((values) => ({ original: [...values], values: [...values] }));
+  state.categoryAddRows = [["", "", ""]];
+  renderCategoryManager();
+  fillEntryForms([{}]);
+}
+
+async function saveCategories() {
+  const additions = state.categoryAddRows.filter((values) => values.some((value) => value.trim())).map((values) => ({
+    original: null,
+    values,
+  }));
+  const payload = await requestJson("/api/categories", {
+    method: "POST",
+    body: JSON.stringify({ rows: [...state.categoryExistingRows, ...additions] }),
+  });
+  CATEGORIES = payload.categories;
+  byType = groupOptions(CATEGORIES, 0);
+  state.categoryExistingRows = CATEGORIES.map((values) => ({ original: [...values], values: [...values] }));
+  state.categoryAddRows = [["", "", ""]];
+  if (payload.records) state.records = payload.records;
+  renderCategoryManager();
+  fillEntryForms([{}]);
+  render();
+  toast(payload.backupPath ? `分类已更新，原账本已备份为 ${payload.backupPath}` : "新增分类已保存，CSV 未修改");
+}
+
 async function changeCsvPath() {
   const nextPath = $("csvPathInput").value.trim();
   const payload = await requestJson("/api/csv-path", {
@@ -228,6 +280,7 @@ async function changeCsvPath() {
   });
   state.records = payload.records;
   $("csvPathInput").value = payload.path;
+  await loadCategories();
   render();
   $("csvPathPanel").classList.remove("open");
   toast("账本文件已切换");
@@ -1083,6 +1136,7 @@ function render() {
   renderPositiveBars("typeChart", summarizeExpenses(rows, "type"));
   renderPositiveBars("nameChart", summarizeExpenses(rows, "name1"));
   renderPositiveBars("topName2Chart", summarizeExpenses(rows, typeName2Key, 5));
+  renderCategoryManager();
 }
 
 function collectTableRecords() {
@@ -1155,6 +1209,35 @@ function bindEvents() {
     fillEntryForms([{}]);
     render();
     toast("已追加到 CSV");
+  });
+  $("categoryAddBody").addEventListener("input", (event) => {
+    const tr = event.target.closest("tr");
+    if (!tr || !event.target.matches("input[data-level]")) return;
+    state.categoryAddRows[Number(tr.dataset.index)][Number(event.target.dataset.level)] = event.target.value;
+  });
+  $("categoryExistingBody").addEventListener("input", (event) => {
+    const tr = event.target.closest("tr");
+    if (!tr || !event.target.matches("input[data-level]")) return;
+    state.categoryExistingRows[Number(tr.dataset.index)].values[Number(event.target.dataset.level)] = event.target.value;
+  });
+  $("categoryManagePage").addEventListener("click", (event) => {
+    if (!event.target.classList.contains("delete-category-btn")) return;
+    const tr = event.target.closest("tr");
+    const index = Number(tr.dataset.index);
+    if (event.target.dataset.source === "add") {
+      state.categoryAddRows.splice(index, 1);
+      if (!state.categoryAddRows.length) state.categoryAddRows.push(["", "", ""]);
+    } else {
+      state.categoryExistingRows.splice(index, 1);
+    }
+    renderCategoryManager();
+  });
+  $("addCategoryBtn").addEventListener("click", () => {
+    state.categoryAddRows.push(["", "", ""]);
+    renderCategoryManager();
+  });
+  $("saveCategoriesBtn").addEventListener("click", () => {
+    saveCategories().catch((error) => toast(error.message));
   });
 
   $("recordBody").addEventListener("change", (event) => {
@@ -1314,4 +1397,5 @@ setThisWeek();
 setPage("book");
 bindEvents();
 loadRecords().catch((error) => toast(error.message));
+loadCategories().catch((error) => toast(error.message));
 loadFunds();

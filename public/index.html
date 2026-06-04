@@ -27,6 +27,7 @@
       <button class="nav-btn" type="button" data-page="analysis">支出分析</button>
       <button class="nav-btn" type="button" data-page="month">月账单</button>
       <button class="nav-btn" type="button" data-page="category">品类分析</button>
+      <button class="nav-btn" type="button" data-page="categoryManage">分类管理</button>
     </nav>
 
     <section class="page active" id="bookPage">
@@ -365,6 +366,57 @@
               </tr>
             </thead>
             <tbody id="categoryRawBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="categoryManagePage">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>收支分类管理</h2>
+            <p>纯新增分类不会修改 CSV。修改或删除原分类时，确认后会先备份并更新 CSV。</p>
+          </div>
+          <div class="filters">
+            <button id="saveCategoriesBtn" type="button">确认分类修改</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>新增分类</h2>
+          <button id="addCategoryBtn" class="secondary" type="button">增加一行</button>
+        </div>
+        <div class="table-wrap category-add-table">
+          <table>
+            <thead>
+              <tr>
+                <th>一级分类</th>
+                <th>二级分类</th>
+                <th>三级分类</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="categoryAddBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>修改或删除原分类</h2>
+        <div class="table-wrap category-existing-table">
+          <table>
+            <thead>
+              <tr>
+                <th>一级分类</th>
+                <th>二级分类</th>
+                <th>三级分类</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="categoryExistingBody"></tbody>
           </table>
         </div>
       </section>

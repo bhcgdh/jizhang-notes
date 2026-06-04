@@ -71,9 +71,10 @@ let CATEGORIES = [
 const state = {
   records: [],
   page: "book",
-  monthSort: "desc",
+  monthSort: { key: "p", dir: "desc" },
   monthSummarySort: "dateDesc",
-  monthDetailKind: "income",
+  monthDetailKind: "expense",
+  monthCalendarFilter: { type: "自己支出", name1: "all", name2: "all" },
   analysisDetail: { type: "all", name1: "all", name2: "all", start: "", end: "", min: "", max: "", bak: "" },
   analysisDetailDraft: { type: "all", name1: "all", name2: "all", start: "", end: "", min: "", max: "", bak: "" },
   analysisDetailSort: { key: "t", dir: "desc" },
@@ -135,6 +136,13 @@ function todayText(date = new Date()) {
 
 function currentMonthText() {
   return todayText().slice(0, 7);
+}
+
+function changeMonth(offset) {
+  const [year, month] = ($("monthPicker").value || currentMonthText()).split("-").map(Number);
+  const next = new Date(year, month - 1 + offset, 1);
+  $("monthPicker").value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+  render();
 }
 
 function setThisWeek() {
@@ -344,10 +352,19 @@ function renderTable(rows) {
 
 function renderMonthTable(rows) {
   const sorted = [...rows].sort((a, b) => {
-    const diff = (Number(a.p) || 0) - (Number(b.p) || 0);
-    return state.monthSort === "asc" ? diff : -diff;
+    const av = state.monthSort.key === "p" ? Number(a.p) || 0 : String(a[state.monthSort.key] || "");
+    const bv = state.monthSort.key === "p" ? Number(b.p) || 0 : String(b[state.monthSort.key] || "");
+    const diff = state.monthSort.key === "p" ? av - bv : av.localeCompare(bv, "zh-CN");
+    return state.monthSort.dir === "asc" ? diff : -diff;
   });
-  $("monthSortIcon").textContent = state.monthSort === "asc" ? "↑" : "↓";
+  for (const [key, iconId] of [
+    ["type", "monthTypeSortIcon"],
+    ["name1", "monthName1SortIcon"],
+    ["name2", "monthName2SortIcon"],
+    ["p", "monthSortIcon"],
+  ]) {
+    $(iconId).textContent = state.monthSort.key === key ? (state.monthSort.dir === "asc" ? "↑" : "↓") : "↕";
+  }
   $("monthRecordBody").innerHTML = sorted.map((record) => `
     <tr>
       <td>${escapeHtml(record.t)}</td>
@@ -922,7 +939,23 @@ function renderMonthPage(records) {
   const monthExpenses = expenseRows(monthRows);
   const categoryTotals = totalsBy(monthExpenses, typeName2Key).sort((a, b) => b[1] - a[1]);
   const name2Totals = categoryTotals;
-  const dailyTotals = totalsBy(monthExpenses, (record) => record.t.slice(8, 10));
+  const calendarFilter = state.monthCalendarFilter;
+  const expenseCategories = CATEGORIES.filter(([type]) => !String(type).includes("收入"));
+  const calendarTypes = groupOptions(expenseCategories, 0).sort();
+  if (!calendarTypes.includes(calendarFilter.type)) {
+    calendarFilter.type = calendarTypes.includes("自己支出") ? "自己支出" : "all";
+  }
+  const calendarTypeRows = monthExpenses.filter((record) => calendarFilter.type === "all" || record.type === calendarFilter.type);
+  const calendarName1s = groupOptions(expenseCategories, 1, calendarFilter.type === "all" ? {} : { 0: calendarFilter.type }).sort();
+  if (calendarFilter.name1 !== "all" && !calendarName1s.includes(calendarFilter.name1)) calendarFilter.name1 = "all";
+  const calendarName1Rows = calendarTypeRows.filter((record) => calendarFilter.name1 === "all" || record.name1 === calendarFilter.name1);
+  const calendarCategoryFilters = {};
+  if (calendarFilter.type !== "all") calendarCategoryFilters[0] = calendarFilter.type;
+  if (calendarFilter.name1 !== "all") calendarCategoryFilters[1] = calendarFilter.name1;
+  const calendarName2s = groupOptions(expenseCategories, 2, calendarCategoryFilters).sort();
+  if (calendarFilter.name2 !== "all" && !calendarName2s.includes(calendarFilter.name2)) calendarFilter.name2 = "all";
+  const calendarRows = calendarName1Rows.filter((record) => calendarFilter.name2 === "all" || record.name2 === calendarFilter.name2);
+  const dailyTotals = totalsBy(calendarRows, (record) => record.t.slice(8, 10));
   let expense = 0;
   let coreExpense = 0;
   let income = 0;
@@ -944,6 +977,9 @@ function renderMonthPage(records) {
   $("monthCount").textContent = String(monthRows.length);
   renderPie("monthPieChart", categoryTotals.slice(0, 8));
   renderRatioList("monthRankList", name2Totals.slice(0, 12));
+  setFilterOptions($("monthCalendarType"), calendarTypes, calendarFilter.type, "全部支出");
+  setFilterOptions($("monthCalendarName1"), calendarName1s, calendarFilter.name1, "全部二级");
+  setFilterOptions($("monthCalendarName2"), calendarName2s, calendarFilter.name2, "全部三级");
   renderMonthCalendar("monthDailyCalendar", month, dailyTotals);
   $("monthDetailKind").value = state.monthDetailKind;
   const detailRows = monthRows.filter((record) => {
@@ -1278,6 +1314,23 @@ function bindEvents() {
   $("startDate").addEventListener("change", render);
   $("endDate").addEventListener("change", render);
   $("monthPicker").addEventListener("change", render);
+  $("previousMonthBtn").addEventListener("click", () => changeMonth(-1));
+  $("nextMonthBtn").addEventListener("click", () => changeMonth(1));
+  $("monthCalendarType").addEventListener("change", (event) => {
+    state.monthCalendarFilter.type = event.target.value;
+    state.monthCalendarFilter.name1 = "all";
+    state.monthCalendarFilter.name2 = "all";
+    render();
+  });
+  $("monthCalendarName1").addEventListener("change", (event) => {
+    state.monthCalendarFilter.name1 = event.target.value;
+    state.monthCalendarFilter.name2 = "all";
+    render();
+  });
+  $("monthCalendarName2").addEventListener("change", (event) => {
+    state.monthCalendarFilter.name2 = event.target.value;
+    render();
+  });
   $("monthDetailKind").addEventListener("change", (event) => {
     state.monthDetailKind = event.target.value;
     render();
@@ -1385,10 +1438,21 @@ function bindEvents() {
       render();
     });
   }
-  $("monthSortBtn").addEventListener("click", () => {
-    state.monthSort = state.monthSort === "asc" ? "desc" : "asc";
-    render();
-  });
+  for (const [id, key] of [
+    ["monthTypeSortBtn", "type"],
+    ["monthName1SortBtn", "name1"],
+    ["monthName2SortBtn", "name2"],
+    ["monthSortBtn", "p"],
+  ]) {
+    $(id).addEventListener("click", () => {
+      if (state.monthSort.key === key) {
+        state.monthSort.dir = state.monthSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.monthSort = { key, dir: key === "p" ? "desc" : "asc" };
+      }
+      render();
+    });
+  }
 }
 
 fillEntryForms([{}]);

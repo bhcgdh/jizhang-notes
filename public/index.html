@@ -67,7 +67,7 @@
             <button id="saveTableBtn" type="button">保存修改</button>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap fifteen-row-table book-data-table">
           <table>
             <thead>
               <tr>
@@ -200,8 +200,10 @@
       <section class="panel">
         <div class="section-head">
           <h2>月账单</h2>
-          <div class="filters">
+          <div class="filters month-picker-controls">
+            <button id="previousMonthBtn" class="secondary month-arrow-btn" type="button" aria-label="上个月" title="上个月">←</button>
             <label>月份<input id="monthPicker" type="month"></label>
+            <button id="nextMonthBtn" class="secondary month-arrow-btn" type="button" aria-label="下个月" title="下个月">→</button>
           </div>
         </div>
       </section>
@@ -224,7 +226,14 @@
           <div id="monthRankList" class="chart"></div>
         </div>
         <div class="panel">
-          <h2>当月每日支出</h2>
+          <div class="calendar-panel-head">
+            <h2>当月每日支出</h2>
+            <div class="calendar-filters">
+              <label>一级分类<select id="monthCalendarType"></select></label>
+              <label>二级分类<select id="monthCalendarName1"></select></label>
+              <label>三级分类<select id="monthCalendarName2"></select></label>
+            </div>
+          </div>
           <div id="monthDailyCalendar" class="calendar-grid"></div>
         </div>
       </section>
@@ -234,21 +243,21 @@
           <h2>当月明细</h2>
           <div class="filters">
             <label>收支<select id="monthDetailKind">
-              <option value="income">收入</option>
               <option value="expense">支出</option>
+              <option value="income">收入</option>
               <option value="all">全部</option>
             </select></label>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap fifteen-row-table month-detail-table">
           <table>
             <thead>
               <tr>
                 <th>时间</th>
                 <th>收支</th>
-                <th>一级分类</th>
-                <th>二级分类</th>
-                <th>三级分类</th>
+                <th><button id="monthTypeSortBtn" class="sort-btn" type="button">一级分类 <span id="monthTypeSortIcon">↕</span></button></th>
+                <th><button id="monthName1SortBtn" class="sort-btn" type="button">二级分类 <span id="monthName1SortIcon">↕</span></button></th>
+                <th><button id="monthName2SortBtn" class="sort-btn" type="button">三级分类 <span id="monthName2SortIcon">↕</span></button></th>
                 <th><button id="monthSortBtn" class="sort-btn" type="button" aria-label="按金额排序">金额 <span id="monthSortIcon">↓</span></button></th>
                 <th>备注</th>
               </tr>

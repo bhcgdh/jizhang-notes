@@ -301,6 +301,16 @@ button.danger:hover { background: #ffe5df; }
 .filters { align-items: end; flex-wrap: wrap; }
 .filters label { width: 150px; }
 
+.month-picker-controls {
+  flex-wrap: nowrap;
+}
+
+.month-arrow-btn {
+  min-width: 40px;
+  padding: 0;
+  font-size: 18px;
+}
+
 .table-wrap { overflow-x: auto; }
 table {
   width: 100%;
@@ -487,6 +497,25 @@ td .delete-btn { min-height: 34px; }
   overflow: auto;
 }
 
+.fifteen-row-table {
+  overflow: auto;
+}
+
+.book-data-table {
+  max-height: 810px;
+}
+
+.month-detail-table {
+  max-height: 657px;
+}
+
+.fifteen-row-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fffaf3;
+}
+
 .analysis-detail-table table {
   min-width: 840px;
   table-layout: fixed;
@@ -657,6 +686,27 @@ td .delete-btn { min-height: 34px; }
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
+}
+
+.calendar-panel-head {
+  margin-bottom: 12px;
+}
+
+.calendar-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendar-filters label {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.calendar-filters select {
+  min-height: 32px;
+  padding: 4px 6px;
+  font-size: 12px;
 }
 
 .calendar-head,

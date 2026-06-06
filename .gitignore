@@ -4,3 +4,4 @@ screenshot*.png
 .env.*
 data/
 datas/
+logs/

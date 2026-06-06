@@ -204,7 +204,11 @@ function entryRowHtml(record = {}) {
 
 function fillEntryForms(records) {
   const rows = records.length ? records : [{}];
-  $("entryForm").innerHTML = `${rows.map(entryRowHtml).join("")}<div class="entry-actions"><button type="submit">全部保存到账表</button></div>`;
+  $("entryForm").innerHTML = `${rows.map(entryRowHtml).join("")}<div class="entry-actions"><button class="secondary add-entry-btn" type="button">增加一条账单</button><button type="submit">全部保存到账表</button></div>`;
+}
+
+function addEntryFormRow(record = {}) {
+  $("entryForm").querySelector(".entry-actions").insertAdjacentHTML("beforebegin", entryRowHtml(record));
 }
 
 async function requestJson(url, options = {}) {
@@ -1207,6 +1211,10 @@ function bindEvents() {
     updateFormOptions(event.target.closest(".entry-row"));
   });
   $("entryForm").addEventListener("click", (event) => {
+    if (event.target.classList.contains("add-entry-btn")) {
+      addEntryFormRow();
+      return;
+    }
     if (!event.target.classList.contains("remove-entry-btn")) return;
     event.target.closest(".entry-row").remove();
     if (!$("entryForm").querySelector(".entry-row")) fillEntryForms([{}]);

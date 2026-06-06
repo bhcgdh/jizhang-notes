@@ -15,6 +15,18 @@ if errorlevel 1 (
   echo Qwen API is already running.
 )
 
+echo Waiting for Qwen API...
+for /l %%I in (1,1,180) do (
+  powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort 8001 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+  if not errorlevel 1 goto :QwenReady
+  timeout /t 1 /nobreak >nul
+)
+
+echo Failed to start Qwen API on port 8001.
+pause
+exit /b 1
+
+:QwenReady
 call :FindBookkeepingPort
 if not defined BOOKKEEPING_PORT (
   echo Starting bookkeeping service...

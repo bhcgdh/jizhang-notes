@@ -744,6 +744,109 @@ td .delete-btn { min-height: 34px; }
   font-size: 11px;
 }
 
+.diary-layout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.diary-calendar-panel,
+.diary-editor-panel {
+  min-height: 560px;
+}
+
+.diary-calendar {
+  margin-top: 14px;
+}
+
+.diary-day {
+  position: relative;
+  width: 100%;
+  min-height: 62px;
+  padding: 5px 2px;
+  color: var(--text);
+  background: #fffaf3;
+  gap: 1px;
+}
+
+.diary-day:hover {
+  background: #eef7ff;
+}
+
+.diary-day.selected {
+  border-color: var(--accent-dark);
+  background: #d9ecff;
+  color: #254d77;
+}
+
+.diary-day.has-diary {
+  font-weight: 700;
+}
+
+.diary-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--accent-dark);
+}
+
+.diary-ganzhi {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.diary-ganzhi span {
+  font-weight: 700;
+}
+
+.wuxing-wood {
+  color: #2f9e44;
+}
+
+.wuxing-fire {
+  color: #e03131;
+}
+
+.wuxing-earth {
+  color: #b7791f;
+}
+
+.wuxing-metal {
+  color: #c9a227;
+}
+
+.wuxing-water {
+  color: #1971c2;
+}
+
+.diary-expense {
+  min-height: 14px;
+  color: #4f78a2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.diary-textarea {
+  min-height: 480px;
+  margin-top: 14px;
+  border: 2px solid var(--accent);
+  background: #eef7ff;
+  line-height: 1.8;
+  font-size: 15px;
+  resize: vertical;
+}
+
+.muted-text {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .sort-btn {
   min-height: 28px;
   padding: 0;
@@ -824,4 +927,5 @@ td .delete-btn { min-height: 34px; }
   .file-controls { grid-template-columns: 1fr; width: 100%; }
   .csv-path-panel { position: static; width: 100%; grid-template-columns: 1fr; }
   .inline-path-panel { grid-template-columns: 1fr; }
+  .diary-layout { grid-template-columns: 1fr; }
 }

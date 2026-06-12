@@ -20,7 +20,7 @@ let CATEGORIES = [
   ["家里支出", "食物支出", "花茶"],
   ["家里支出", "食物支出", "调料"],
   ["家里支出", "食物支出", "咖啡"],
-  ["家里支出", "食物支出", "甜点"],
+  ["家里支出", "食物支出", "甜品"],
   ["家里支出", "食物支出", "虾仁"],
   ["自己支出", "其他", "其他"],
   ["自己支出", "医疗支出", "艾草"],
@@ -60,7 +60,6 @@ let CATEGORIES = [
   ["自己支出", "食物支出", "调料"],
   ["自己支出", "食物支出", "花茶"],
   ["自己支出", "食物支出", "干货"],
-  ["自己支出", "食物支出", "甜点"],
   ["自己支出", "食物支出", "甜品"],
   ["自己收入", "基金", "none"],
   ["自己收入", "工资收入", "none"],
@@ -84,6 +83,7 @@ const state = {
   categoryFilter: { type: "自己支出", name1: "all", name2: "all" },
   categoryExistingRows: [],
   categoryAddRows: [["", "", ""]],
+  diary: { date: todayText(), month: currentMonthText(), markedDates: [], ganzhiDays: {}, lastSavedText: "", saving: null, autoSaveTimer: null },
 };
 let byType = groupOptions(CATEGORIES, 0);
 
@@ -143,6 +143,12 @@ function changeMonth(offset) {
   const next = new Date(year, month - 1 + offset, 1);
   $("monthPicker").value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
   render();
+}
+
+function shiftMonth(monthText, offset) {
+  const [year, month] = (monthText || currentMonthText()).split("-").map(Number);
+  const next = new Date(year, month - 1 + offset, 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function setThisWeek() {
@@ -232,6 +238,113 @@ async function loadRecords() {
   state.records = payload.records;
   $("csvPathInput").value = payload.path;
   render();
+}
+
+function ganzhiHtml(text) {
+  const wuxing = {
+    wood: "甲乙寅卯",
+    fire: "丙丁巳午",
+    earth: "戊己辰戌丑未",
+    metal: "庚辛申酉",
+    water: "壬癸亥子",
+  };
+  return [...String(text || "")].map((char) => {
+    const entry = Object.entries(wuxing).find(([, chars]) => chars.includes(char));
+    const className = entry ? `wuxing-${entry[0]}` : "";
+    return `<span class="${className}">${escapeHtml(char)}</span>`;
+  }).join("");
+}
+
+function renderDiaryCalendar() {
+  const month = state.diary.month || currentMonthText();
+  const [year, monthText] = month.split("-").map(Number);
+  const days = new Date(year, monthText, 0).getDate();
+  const firstOffset = (new Date(year, monthText - 1, 1).getDay() + 6) % 7;
+  const marked = new Set(state.diary.markedDates || []);
+  const dailyExpense = new Map(totalsBy(expenseRows(state.records).filter((record) => String(record.t || "").startsWith(month)), (record) => record.t));
+  $("diaryMonthPicker").value = month;
+  const heads = ["一", "二", "三", "四", "五", "六", "日"].map((label) => `<div class="calendar-head">${label}</div>`);
+  const blanks = Array.from({ length: firstOffset }, () => "<div class=\"calendar-cell empty\"></div>");
+  const cells = Array.from({ length: days }, (_, index) => {
+    const day = String(index + 1).padStart(2, "0");
+    const date = `${month}-${day}`;
+    const classes = [
+      "calendar-cell",
+      "diary-day",
+      date === state.diary.date ? "selected" : "",
+      marked.has(date) ? "has-diary" : "",
+    ].filter(Boolean).join(" ");
+    return `
+      <button class="${classes}" type="button" data-date="${date}" title="${date}">
+        <span class="calendar-day">${day}</span>
+        <span class="diary-ganzhi">${ganzhiHtml(state.diary.ganzhiDays?.[date] || "")}</span>
+        <span class="diary-expense">${dailyExpense.get(date) ? Math.round(dailyExpense.get(date)) : ""}</span>
+        ${marked.has(date) ? "<span class=\"diary-dot\"></span>" : ""}
+      </button>
+    `;
+  });
+  $("diaryCalendar").innerHTML = [...heads, ...blanks, ...cells].join("");
+}
+
+async function loadDiary(date = state.diary.date) {
+  const payload = await requestJson(`/api/diary?date=${encodeURIComponent(date)}`);
+  state.diary.date = payload.diary.date;
+  state.diary.month = payload.diary.date.slice(0, 7);
+  state.diary.markedDates = payload.diary.markedDates || [];
+  state.diary.ganzhiDays = payload.diary.ganzhiDays || {};
+  $("diaryDateTitle").textContent = `写日记：${payload.diary.date}`;
+  $("diaryPathText").textContent = payload.diary.path;
+  $("diaryText").value = payload.diary.text;
+  state.diary.lastSavedText = payload.diary.text;
+  renderDiaryCalendar();
+}
+
+function diaryHasChanges() {
+  return $("diaryText") && $("diaryText").value !== state.diary.lastSavedText;
+}
+
+async function saveDiary(options = {}) {
+  if (!diaryHasChanges() && !options.force) return null;
+  if (state.diary.saving) await state.diary.saving;
+  try {
+    state.diary.saving = requestJson("/api/diary", {
+      method: "POST",
+      body: JSON.stringify({ date: state.diary.date, text: $("diaryText").value }),
+    });
+    const payload = await state.diary.saving;
+    state.diary.markedDates = payload.diary.markedDates || [];
+    $("diaryText").value = payload.diary.text;
+    state.diary.lastSavedText = payload.diary.text;
+    $("diaryPathText").textContent = payload.diary.path;
+    renderDiaryCalendar();
+    if (!options.silent) toast("日记已保存");
+    return payload;
+  } finally {
+    state.diary.saving = null;
+  }
+}
+
+function queueDiaryAutoSave() {
+  clearTimeout(state.diary.autoSaveTimer);
+  state.diary.autoSaveTimer = setTimeout(() => {
+    saveDiary({ silent: true }).catch((error) => toast(error.message));
+  }, 1200);
+}
+
+async function switchDiaryDate(date) {
+  clearTimeout(state.diary.autoSaveTimer);
+  await saveDiary({ silent: true });
+  await loadDiary(date);
+}
+
+function saveDiaryBeforeUnload() {
+  if (!diaryHasChanges()) return;
+  const body = JSON.stringify({ date: state.diary.date, text: $("diaryText").value });
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon("/api/diary", new Blob([body], { type: "application/json" }));
+  } else {
+    fetch("/api/diary", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true });
+  }
 }
 
 function categoryManagerRowHtml(row, index, source) {
@@ -1159,7 +1272,15 @@ function renderCategoryPage(records) {
   renderCategoryRawTable(filtered);
 }
 
-function setPage(page) {
+async function setPage(page) {
+  if (state.page === "diary" && page !== "diary") {
+    clearTimeout(state.diary.autoSaveTimer);
+    try {
+      await saveDiary({ silent: true });
+    } catch (error) {
+      toast(error.message);
+    }
+  }
   state.page = page;
   document.querySelectorAll(".page").forEach((el) => el.classList.toggle("active", el.id === `${page}Page`));
   document.querySelectorAll(".nav-btn").forEach((el) => el.classList.toggle("active", el.dataset.page === page));
@@ -1202,9 +1323,20 @@ async function saveVisibleEdits() {
   toast("CSV 已保存");
 }
 
+function includeSavedRecordDates(records) {
+  const dates = records.map((record) => record.t).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)).sort();
+  if (!dates.length) return;
+  const minDate = dates[0];
+  const maxDate = dates[dates.length - 1];
+  if ($("startDate").value && minDate < $("startDate").value) $("startDate").value = minDate;
+  if ($("endDate").value && maxDate > $("endDate").value) $("endDate").value = maxDate;
+}
+
 function bindEvents() {
   document.querySelectorAll(".nav-btn").forEach((button) => {
-    button.addEventListener("click", () => setPage(button.dataset.page));
+    button.addEventListener("click", () => {
+      setPage(button.dataset.page).catch((error) => toast(error.message));
+    });
   });
   $("entryForm").addEventListener("change", (event) => {
     if (!event.target.matches("[name='type'], [name='name1']")) return;
@@ -1243,16 +1375,30 @@ function bindEvents() {
   });
   $("entryForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const records = [...event.currentTarget.querySelectorAll(".entry-row")].map((row) => (
-      Object.fromEntries(["t", "type", "name1", "name2", "p", "bak"].map((name) => (
-        [name, row.querySelector(`[name='${name}']`).value]
-      )))
-    ));
-    const payload = await requestJson("/api/records", { method: "POST", body: JSON.stringify({ records }) });
-    state.records = payload.records;
-    fillEntryForms([{}]);
-    render();
-    toast("已追加到 CSV");
+    const submitButton = event.currentTarget.querySelector("button[type='submit']");
+    try {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "保存中...";
+      }
+      const records = [...event.currentTarget.querySelectorAll(".entry-row")].map((row) => (
+        Object.fromEntries(["t", "type", "name1", "name2", "p", "bak"].map((name) => (
+          [name, row.querySelector(`[name='${name}']`).value]
+        )))
+      ));
+      await requestJson("/api/records", { method: "POST", body: JSON.stringify({ records }) });
+      includeSavedRecordDates(records);
+      await loadRecords();
+      fillEntryForms([{}]);
+      toast(`已追加 ${records.length} 条到账表`);
+    } catch (error) {
+      toast(`保存到账表失败：${error.message}`);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "全部保存到账表";
+      }
+    }
   });
   $("categoryAddBody").addEventListener("input", (event) => {
     const tr = event.target.closest("tr");
@@ -1324,6 +1470,34 @@ function bindEvents() {
   $("monthPicker").addEventListener("change", render);
   $("previousMonthBtn").addEventListener("click", () => changeMonth(-1));
   $("nextMonthBtn").addEventListener("click", () => changeMonth(1));
+  $("diaryPreviousMonthBtn").addEventListener("click", () => {
+    state.diary.month = shiftMonth(state.diary.month, -1);
+    state.diary.date = `${state.diary.month}-01`;
+    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+  });
+  $("diaryNextMonthBtn").addEventListener("click", () => {
+    state.diary.month = shiftMonth(state.diary.month, 1);
+    state.diary.date = `${state.diary.month}-01`;
+    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+  });
+  $("diaryMonthPicker").addEventListener("change", (event) => {
+    state.diary.month = event.target.value || currentMonthText();
+    state.diary.date = `${state.diary.month}-01`;
+    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+  });
+  $("diaryCalendar").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-date]");
+    if (!button) return;
+    switchDiaryDate(button.dataset.date).catch((error) => toast(error.message));
+  });
+  $("saveDiaryBtn").addEventListener("click", () => {
+    saveDiary().catch((error) => toast(error.message));
+  });
+  $("diaryText").addEventListener("input", queueDiaryAutoSave);
+  window.addEventListener("beforeunload", saveDiaryBeforeUnload);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") saveDiaryBeforeUnload();
+  });
   $("monthCalendarType").addEventListener("change", (event) => {
     state.monthCalendarFilter.type = event.target.value;
     state.monthCalendarFilter.name1 = "all";
@@ -1471,3 +1645,4 @@ bindEvents();
 loadRecords().catch((error) => toast(error.message));
 loadCategories().catch((error) => toast(error.message));
 loadFunds();
+loadDiary().catch((error) => toast(error.message));

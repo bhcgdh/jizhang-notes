@@ -11,6 +11,7 @@ const BASE_PORT = Number(process.env.PORT || 5174);
 
 let csvPath = process.env.CSV_PATH || "F:\\daysz\\dfsz.csv";
 let fundsPath = process.env.FUNDS_XLSX_PATH || "F:\\daysz\\hisdata\\mark1.xlsx";
+const DIARY_DIR = process.env.DIARY_DIR || "F:\\zz_codexs\\本地日记\\data";
 const LLM_BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const LLM_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -18,9 +19,11 @@ const COLUMNS = ["t", "type", "name1", "name2", "p", "bak", "month", "year", "ym
 const EDIT_COLUMNS = ["t", "type", "name1", "name2", "p", "bak"];
 const CATEGORY_ALIASES = {
   "衣服": "衣物",
+  "甜点": "甜品",
+  "甜店": "甜品",
 };
 const CATEGORY_HINTS = [
-  { pattern: /甜品|甜点/, name1: "食物支出", name2: "甜点" },
+  { pattern: /甜品|甜点|甜店/, name1: "食物支出", name2: "甜品" },
   { pattern: /衣服|衣物/, name1: "日用支出", name2: "衣物" },
   { pattern: /手机/, name1: "日用支出", name2: "电器电子" },
   { pattern: /零食/, name1: "食物支出", name2: "零食" },
@@ -47,7 +50,7 @@ const DEFAULT_CATEGORY_LINES = [
   "家里支出 食物支出 花茶",
   "家里支出 食物支出 调料",
   "家里支出 食物支出 咖啡",
-  "家里支出 食物支出 甜点",
+  "家里支出 食物支出 甜品",
   "家里支出 食物支出 虾仁",
   "自己支出 其他 其他",
   "自己支出 医疗支出 艾草",
@@ -87,7 +90,6 @@ const DEFAULT_CATEGORY_LINES = [
   "自己支出 食物支出 调料",
   "自己支出 食物支出 花茶",
   "自己支出 食物支出 干货",
-  "自己支出 食物支出 甜点",
   "自己支出 食物支出 甜品",
   "自己收入 基金 none",
   "自己收入 工资收入 none",
@@ -107,11 +109,12 @@ function loadCategories() {
     return;
   }
 
-  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!Array.isArray(parsed) || !parsed.length || parsed.some((row) => !Array.isArray(row) || row.length !== 3)) {
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
+  const rows = Array.isArray(parsed) ? parsed.map((row) => (Array.isArray(row) ? row : row?.value)) : [];
+  if (!rows.length || rows.some((row) => !Array.isArray(row) || row.length !== 3)) {
     throw new Error("分类配置文件格式无效");
   }
-  categoryLines = parsed.map((row) => row.map((value) => String(value).trim()).join(" "));
+  categoryLines = rows.map((row) => row.map((value) => String(value).trim()).join(" "));
 }
 
 function nextBackupPath(filePath) {
@@ -226,6 +229,143 @@ function escapeCsv(value) {
   return text;
 }
 
+function diaryPathForDate(dateText) {
+  const year = String(dateText || "").slice(0, 4);
+  if (!/^\d{4}$/.test(year)) throw new Error("日记日期格式无效");
+  return path.join(DIARY_DIR, `${year}年的日记.csv`);
+}
+
+function ensureDiaryFile(dateText) {
+  fs.mkdirSync(DIARY_DIR, { recursive: true });
+  const filePath = diaryPathForDate(dateText);
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, "\uFEFFid,时间,日志\n", "utf8");
+  }
+  return filePath;
+}
+
+function readDiaryRows(dateText) {
+  const filePath = ensureDiaryFile(dateText);
+  const text = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
+  const header = rows[0];
+  const indexes = Object.fromEntries(header.map((name, index) => [name, index]));
+  return rows.slice(1)
+    .filter((row) => row.some((cell) => cell !== ""))
+    .map((row) => ({
+      id: row[indexes.id] || "",
+      time: row[indexes["时间"]] || "",
+      text: row[indexes["日志"]] || "",
+    }));
+}
+
+function writeDiaryRows(dateText, rows) {
+  const filePath = ensureDiaryFile(dateText);
+  const lines = [
+    "id,时间,日志",
+    ...rows.map((row) => [row.id, row.time, row.text].map(escapeCsv).join(",")),
+  ];
+  fs.writeFileSync(filePath, `\uFEFF${lines.join("\n")}\n`, "utf8");
+}
+
+function chineseDigits(number) {
+  return String(number).replace(/\d/g, (digit) => "〇一二三四五六七八九"[Number(digit)]);
+}
+
+function chineseDay(number) {
+  const n = Number(number);
+  const digits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (n <= 10) return n === 10 ? "十" : digits[n];
+  if (n < 20) return `十${digits[n - 10]}`;
+  if (n === 20) return "二十";
+  if (n < 30) return `二十${digits[n - 20]}`;
+  if (n === 30) return "三十";
+  return `三十${digits[n - 30]}`;
+}
+
+function ganzhiDay(date) {
+  const stems = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"];
+  const branches = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"];
+  const anchor = Date.UTC(2026, 5, 5);
+  const current = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = Math.round((current - anchor) / 86400000);
+  const index = ((46 + diff) % 60 + 60) % 60;
+  return `${stems[index % 10]}${branches[index % 12]}`;
+}
+
+function ganzhiMonth(date, yearGanzhi) {
+  const stems = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"];
+  const branches = ["寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥", "子", "丑"];
+  const starts = [[2, 4], [3, 6], [4, 5], [5, 6], [6, 5], [7, 7], [8, 7], [9, 7], [10, 8], [11, 7], [12, 7], [1, 6]];
+  const year = date.getFullYear();
+  let monthIndex = 11;
+  for (let i = 0; i < starts.length; i += 1) {
+    const [month, day] = starts[i];
+    const start = new Date(month === 1 ? year + 1 : year, month - 1, day);
+    if (date >= start) monthIndex = i;
+  }
+  if (date < new Date(year, 1, 4)) monthIndex = 11;
+  const yearStemIndex = stems.indexOf(String(yearGanzhi || "")[0]);
+  const firstStemByYearStem = [2, 4, 6, 8, 0, 2, 4, 6, 8, 0];
+  const stemIndex = (firstStemByYearStem[yearStemIndex] + monthIndex) % 10;
+  return `${stems[stemIndex]}${branches[monthIndex]}`;
+}
+
+function diaryPrefix(dateText) {
+  const match = String(dateText || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) throw new Error("日记日期格式无效");
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const lunar = new Intl.DateTimeFormat("zh-u-ca-chinese", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+  const yearGanzhi = lunar.match(/[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]年/)?.[0].replace("年", "") || "";
+  const lunarMonth = lunar.match(/(闰)?[正一二三四五六七八九十冬腊]+月/)?.[0] || "";
+  const lunarDay = lunar.match(/(\d+)$/)?.[1] || "";
+  return `农历：${chineseDigits(match[1])}年${lunarMonth}${chineseDay(lunarDay)}　干支：${yearGanzhi}年  ${ganzhiMonth(date, yearGanzhi)}月  ${ganzhiDay(date)}日 ，`;
+}
+
+function getDiary(dateText) {
+  const rows = readDiaryRows(dateText);
+  const row = rows.find((item) => item.time === dateText);
+  const currentYear = String(dateText).slice(0, 4);
+  const [year, month] = dateText.split("-").map(Number);
+  const days = new Date(year, month, 0).getDate();
+  const ganzhiDays = {};
+  for (let day = 1; day <= days; day += 1) {
+    const dayText = String(day).padStart(2, "0");
+    ganzhiDays[`${currentYear}-${String(month).padStart(2, "0")}-${dayText}`] = ganzhiDay(new Date(year, month - 1, day));
+  }
+  return {
+    date: dateText,
+    id: row?.id || "",
+    text: row?.text || diaryPrefix(dateText),
+    prefix: diaryPrefix(dateText),
+    markedDates: rows.filter((item) => item.text.trim()).map((item) => item.time).filter((time) => time.startsWith(currentYear)),
+    ganzhiDays,
+    path: diaryPathForDate(dateText),
+  };
+}
+
+function saveDiary(payload) {
+  const dateText = String(payload.date || "").trim();
+  const text = String(payload.text || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) throw new Error("日记日期格式无效");
+  const rows = readDiaryRows(dateText);
+  const index = rows.findIndex((row) => row.time === dateText);
+  if (index >= 0) {
+    rows[index].text = text || diaryPrefix(dateText);
+  } else {
+    const maxId = rows.reduce((max, row) => Math.max(max, Number(row.id) || 0), 0);
+    rows.push({ id: String(maxId + 1), time: dateText, text: text || diaryPrefix(dateText) });
+  }
+  rows.sort((a, b) => a.time.localeCompare(b.time));
+  writeDiaryRows(dateText, rows);
+  return getDiary(dateText);
+}
+
 function dateParts(t) {
   const match = String(t || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return { year: "", month: "", ym: "" };
@@ -255,11 +395,11 @@ function normalizeRecord(record) {
 
 function readRecords() {
   ensureCsvFile();
-  const text = fs.readFileSync(csvPath, "utf8").replace(/^\uFEFF/, "");
+  const text = fs.readFileSync(csvPath, "utf8").replace(/^\uFEFF+/, "");
   const rows = parseCsv(text);
   if (!rows.length) return [];
 
-  const header = rows[0];
+  const header = rows[0].map((name) => String(name || "").replace(/^\uFEFF+/, ""));
   const indexes = Object.fromEntries(header.map((name, index) => [name, index]));
 
   return rows.slice(1)
@@ -669,6 +809,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/diary") {
+      const date = url.searchParams.get("date") || localDateText();
+      sendJson(res, 200, { diary: getDiary(date) });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/csv-path") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, { path: setCsvPath(payload.path), records: readRecords() });
@@ -702,6 +848,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/categories") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, updateCategories(payload));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/diary") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { diary: saveDiary(payload) });
       return;
     }
 

@@ -28,6 +28,7 @@
       <button class="nav-btn" type="button" data-page="month">月账单</button>
       <button class="nav-btn" type="button" data-page="category">品类分析</button>
       <button class="nav-btn" type="button" data-page="categoryManage">分类管理</button>
+      <button class="nav-btn" type="button" data-page="diary">写日记</button>
     </nav>
 
     <section class="page active" id="bookPage">
@@ -427,6 +428,33 @@
             </thead>
             <tbody id="categoryExistingBody"></tbody>
           </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="diaryPage">
+      <section class="diary-layout">
+        <div class="panel diary-calendar-panel">
+          <div class="section-head">
+            <h2>日记日历</h2>
+            <div class="filters month-picker-controls">
+              <button id="diaryPreviousMonthBtn" class="secondary month-arrow-btn" type="button" aria-label="上个月">←</button>
+              <label>月份<input id="diaryMonthPicker" type="month"></label>
+              <button id="diaryNextMonthBtn" class="secondary month-arrow-btn" type="button" aria-label="下个月">→</button>
+            </div>
+          </div>
+          <div id="diaryCalendar" class="calendar-grid diary-calendar"></div>
+        </div>
+
+        <div class="panel diary-editor-panel">
+          <div class="section-head">
+            <div>
+              <h2 id="diaryDateTitle">写日记</h2>
+              <p id="diaryPathText" class="muted-text"></p>
+            </div>
+            <button id="saveDiaryBtn" type="button">保存日记</button>
+          </div>
+          <textarea id="diaryText" class="diary-textarea" rows="20"></textarea>
         </div>
       </section>
     </section>

@@ -269,6 +269,55 @@ function writeDiaryRows(dateText, rows) {
   fs.writeFileSync(filePath, `\uFEFF${lines.join("\n")}\n`, "utf8");
 }
 
+function diaryBackupPath(filePath) {
+  const directory = path.join(path.dirname(filePath), "backup");
+  const extension = path.extname(filePath);
+  const baseName = path.basename(filePath, extension);
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  fs.mkdirSync(directory, { recursive: true });
+  let candidate = path.join(directory, `${baseName}_${stamp}${extension}`);
+  let index = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(directory, `${baseName}_${stamp}_${index}${extension}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+function pruneDiaryBackups(filePath) {
+  const directory = path.join(path.dirname(filePath), "backup");
+  if (!fs.existsSync(directory)) return;
+  const extension = path.extname(filePath);
+  const baseName = path.basename(filePath, extension);
+  const backups = fs.readdirSync(directory)
+    .filter((name) => name.startsWith(`${baseName}_`) && name.endsWith(extension))
+    .map((name) => {
+      const fullPath = path.join(directory, name);
+      return { path: fullPath, time: fs.statSync(fullPath).mtimeMs };
+    })
+    .sort((a, b) => b.time - a.time);
+  for (const backup of backups.slice(5)) {
+    fs.unlinkSync(backup.path);
+  }
+}
+
+function backupDiaryFile(filePath) {
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) return null;
+  const backupPath = diaryBackupPath(filePath);
+  fs.copyFileSync(filePath, backupPath);
+  pruneDiaryBackups(filePath);
+  return backupPath;
+}
+
+function mergeDiaryText(originalText, nextText, fallbackText) {
+  const original = String(originalText || "").trim();
+  const next = String(nextText || "").trim();
+  if (!next) return original || fallbackText;
+  if (!original) return next;
+  if (next === original || next.includes(original)) return next;
+  return `${original}\n\n${next}`;
+}
+
 function chineseDigits(number) {
   return String(number).replace(/\d/g, (digit) => "〇一二三四五六七八九"[Number(digit)]);
 }
@@ -353,17 +402,26 @@ function saveDiary(payload) {
   const dateText = String(payload.date || "").trim();
   const text = String(payload.text || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) throw new Error("日记日期格式无效");
+  const filePath = ensureDiaryFile(dateText);
   const rows = readDiaryRows(dateText);
   const index = rows.findIndex((row) => row.time === dateText);
+  let changed = false;
   if (index >= 0) {
-    rows[index].text = text || diaryPrefix(dateText);
+    const mergedText = mergeDiaryText(rows[index].text, text, diaryPrefix(dateText));
+    changed = rows[index].text !== mergedText;
+    rows[index].text = mergedText;
   } else {
     const maxId = rows.reduce((max, row) => Math.max(max, Number(row.id) || 0), 0);
     rows.push({ id: String(maxId + 1), time: dateText, text: text || diaryPrefix(dateText) });
+    changed = true;
   }
-  rows.sort((a, b) => a.time.localeCompare(b.time));
-  writeDiaryRows(dateText, rows);
-  return getDiary(dateText);
+  let backupPath = null;
+  if (changed) {
+    backupPath = backupDiaryFile(filePath);
+    rows.sort((a, b) => a.time.localeCompare(b.time));
+    writeDiaryRows(dateText, rows);
+  }
+  return { ...getDiary(dateText), backupPath };
 }
 
 function dateParts(t) {

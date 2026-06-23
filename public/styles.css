@@ -301,6 +301,45 @@ button.danger:hover { background: #ffe5df; }
 .filters { align-items: end; flex-wrap: wrap; }
 .filters label { width: 150px; }
 
+.loan-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.loan-table,
+.loan-prepay-table {
+  max-height: 620px;
+  overflow: auto;
+}
+
+.loan-table table {
+  min-width: 1040px;
+}
+
+.loan-prepay-table table {
+  min-width: 620px;
+}
+
+.loan-table .num,
+.loan-prepay-table .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.loan-prepay-table input {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.loan-prepay-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .month-picker-controls {
   flex-wrap: nowrap;
 }
@@ -840,6 +879,13 @@ td .delete-btn { min-height: 34px; }
   resize: vertical;
 }
 
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .muted-text {
   margin-top: 6px;
   color: var(--muted);
@@ -928,4 +974,5 @@ td .delete-btn { min-height: 34px; }
   .csv-path-panel { position: static; width: 100%; grid-template-columns: 1fr; }
   .inline-path-panel { grid-template-columns: 1fr; }
   .diary-layout { grid-template-columns: 1fr; }
+  .loan-form { grid-template-columns: 1fr; }
 }

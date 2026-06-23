@@ -309,13 +309,39 @@ function backupDiaryFile(filePath) {
   return backupPath;
 }
 
+function normalizeDiaryText(text) {
+  return String(text || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[，。！？、；：,.!?;:]/g, "")
+    .toLowerCase();
+}
+
+function diaryTextParts(text) {
+  return String(text || "")
+    .split(/\r?\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function mergeDiaryText(originalText, nextText, fallbackText) {
   const original = String(originalText || "").trim();
   const next = String(nextText || "").trim();
+  const normalizedOriginal = normalizeDiaryText(original);
+  const normalizedNext = normalizeDiaryText(next);
   if (!next) return original || fallbackText;
   if (!original) return next;
-  if (next === original || next.includes(original)) return next;
-  return `${original}\n\n${next}`;
+  if (normalizedNext === normalizedOriginal) return original;
+  if (normalizedNext.includes(normalizedOriginal)) return next;
+  if (normalizedOriginal.includes(normalizedNext)) return original;
+
+  const existingParts = diaryTextParts(original).map(normalizeDiaryText);
+  const additions = diaryTextParts(next).filter((part) => {
+    const normalizedPart = normalizeDiaryText(part);
+    return normalizedPart && !existingParts.some((existing) => existing === normalizedPart || existing.includes(normalizedPart) || normalizedPart.includes(existing));
+  });
+  if (!additions.length) return original;
+  return `${original}\n\n${additions.join("\n")}`;
 }
 
 function chineseDigits(number) {
@@ -401,13 +427,14 @@ function getDiary(dateText) {
 function saveDiary(payload) {
   const dateText = String(payload.date || "").trim();
   const text = String(payload.text || "").trim();
+  const overwrite = Boolean(payload.overwrite);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) throw new Error("日记日期格式无效");
   const filePath = ensureDiaryFile(dateText);
   const rows = readDiaryRows(dateText);
   const index = rows.findIndex((row) => row.time === dateText);
   let changed = false;
   if (index >= 0) {
-    const mergedText = mergeDiaryText(rows[index].text, text, diaryPrefix(dateText));
+    const mergedText = overwrite && text ? text : mergeDiaryText(rows[index].text, text, diaryPrefix(dateText));
     changed = rows[index].text !== mergedText;
     rows[index].text = mergedText;
   } else {
@@ -449,6 +476,11 @@ function normalizeRecord(record) {
   clean.p = String(Number(clean.p));
   clean.bak = clean.bak || "none";
   return { ...clean, ...dateParts(clean.t) };
+}
+
+function recordDuplicateKey(record) {
+  const normalized = normalizeRecord(record);
+  return EDIT_COLUMNS.map((key) => normalized[key]).join("\u001F");
 }
 
 function readRecords() {
@@ -888,10 +920,24 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/records") {
       const payload = JSON.parse(await readBody(req));
       const records = readRecords();
-      const additions = Array.isArray(payload.records) ? payload.records : [payload];
-      records.push(...additions.map(normalizeRecord));
-      writeRecords(records);
-      sendJson(res, 200, { ok: true, records: readRecords() });
+      const seen = new Set(records.map(recordDuplicateKey));
+      const additions = (Array.isArray(payload.records) ? payload.records : [payload]).map(normalizeRecord);
+      const uniqueAdditions = additions.filter((record) => {
+        const key = recordDuplicateKey(record);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (uniqueAdditions.length) {
+        records.push(...uniqueAdditions);
+        writeRecords(records);
+      }
+      sendJson(res, 200, {
+        ok: true,
+        addedCount: uniqueAdditions.length,
+        skippedDuplicateCount: additions.length - uniqueAdditions.length,
+        records: readRecords(),
+      });
       return;
     }
 

@@ -83,9 +83,20 @@ const state = {
   categoryFilter: { type: "自己支出", name1: "all", name2: "all" },
   categoryExistingRows: [],
   categoryAddRows: [["", "", ""]],
-  diary: { date: todayText(), month: currentMonthText(), markedDates: [], ganzhiDays: {}, lastSavedText: "", saving: null, autoSaveTimer: null },
+  loanPrepayments: [],
+  diary: {
+    date: todayText(),
+    month: currentMonthText(),
+    markedDates: [],
+    ganzhiDays: {},
+    lastSavedText: "",
+    saving: null,
+    autoSaveTimer: null,
+    drafts: {},
+  },
 };
 let byType = groupOptions(CATEGORIES, 0);
+const DEFAULT_ENTRY_RECORD = { type: "自己支出", name1: "食物支出", name2: "外餐" };
 
 const $ = (id) => document.getElementById(id);
 const formatMoney = (value) => Number(value || 0).toFixed(2);
@@ -95,6 +106,139 @@ const formatSmartAmount = (value) => Math.abs(Number(value || 0)) >= 10000
   : String(Math.round(Number(value || 0)));
 const formatFundsAmount = (value) => (Number(value || 0) / 10000).toFixed(1);
 const CHART_COLORS = ["#FFB7B2", "#FFDAC1", "#B2F2BB", "#A2CFFE", "#D1C4E9"];
+
+function parsePositiveNumber(id, label) {
+  const value = Number($(id).value);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${label}必须大于 0`);
+  return value;
+}
+
+function formatLoanWan(value) {
+  return (Number(value || 0) / 10000).toFixed(2);
+}
+
+function loanMonthlyRate(ratePercent, rateType) {
+  const rate = ratePercent / 100;
+  return rateType === "daily" ? rate * 30 : rate / 12;
+}
+
+function normalizedLoanPrepayments(months = Infinity) {
+  const byMonth = new Map();
+  for (const item of state.loanPrepayments) {
+    const month = Math.round(Number(item.month));
+    const amount = Number(item.amountWan) * 10000;
+    if (!Number.isInteger(month) || month < 1 || month > months || !Number.isFinite(amount) || amount <= 0) continue;
+    byMonth.set(month, (byMonth.get(month) || 0) + amount);
+  }
+  return [...byMonth.entries()].map(([month, amount]) => ({ month, amount })).sort((a, b) => a.month - b.month);
+}
+
+function buildLoanSchedule(principal, years, monthlyRate, method, prepayments = []) {
+  const months = Math.round(years * 12);
+  if (!Number.isInteger(months) || months <= 0) throw new Error("贷款年限必须至少为 1 个月");
+  const schedule = [];
+  const prepaymentMap = new Map(prepayments.map((item) => [item.month, item.amount]));
+  let balance = principal;
+  let cumulativeInterest = 0;
+  const monthlyPrincipal = principal / months;
+  const factor = (1 + monthlyRate) ** months;
+  const fixedPayment = monthlyRate ? principal * monthlyRate * factor / (factor - 1) : principal / months;
+
+  for (let month = 1; month <= months; month += 1) {
+    if (balance <= 0.005) break;
+    const interest = balance * monthlyRate;
+    const principalPart = method === "equalPrincipal"
+      ? Math.min(monthlyPrincipal, balance)
+      : Math.min(fixedPayment - interest, balance);
+    const payment = principalPart + interest;
+    const extraPrincipal = Math.min(prepaymentMap.get(month) || 0, Math.max(0, balance - principalPart));
+    balance = Math.max(0, balance - principalPart - extraPrincipal);
+    cumulativeInterest += interest;
+    schedule.push({ month, payment, principal: principalPart, interest, cumulativeInterest, extraPrincipal, balance });
+  }
+  return schedule;
+}
+
+function renderLoanAnalysis() {
+  try {
+    const principal = parsePositiveNumber("loanAmount", "贷款总金额") * 10000;
+    const years = parsePositiveNumber("loanYears", "贷款年限");
+    const ratePercent = Number($("loanRate").value);
+    if (!Number.isFinite(ratePercent) || ratePercent < 0) throw new Error("利率不能小于 0");
+    const monthlyRate = loanMonthlyRate(ratePercent, $("loanRateType").value);
+    const method = $("loanMethod").value;
+    const equalPaymentInterest = buildLoanSchedule(principal, years, monthlyRate, "equalPayment")
+      .reduce((sum, row) => sum + row.interest, 0);
+    const equalPrincipalInterest = buildLoanSchedule(principal, years, monthlyRate, "equalPrincipal")
+      .reduce((sum, row) => sum + row.interest, 0);
+    const baseSchedule = buildLoanSchedule(principal, years, monthlyRate, method);
+    const baseInterest = baseSchedule.reduce((sum, row) => sum + row.interest, 0);
+    const prepayments = normalizedLoanPrepayments(baseSchedule.length);
+    const schedule = buildLoanSchedule(principal, years, monthlyRate, method, prepayments);
+    const totalInterest = schedule.reduce((sum, row) => sum + row.interest, 0);
+    const totalRegularPayment = schedule.reduce((sum, row) => sum + row.payment, 0);
+    const totalExtraPrincipal = schedule.reduce((sum, row) => sum + row.extraPrincipal, 0);
+    const totalPayment = totalRegularPayment + totalExtraPrincipal;
+    const savedInterest = Math.max(0, baseInterest - totalInterest);
+
+    $("loanPrincipalTotal").textContent = formatLoanWan(principal);
+    $("loanInterestTotal").textContent = formatLoanWan(totalInterest);
+    $("loanPaymentTotal").textContent = formatLoanWan(totalPayment);
+    $("loanMonthCount").textContent = String(schedule.length);
+    $("loanSavedInterestTotal").textContent = formatLoanWan(savedInterest);
+    $("loanPrepaySavedTotal").textContent = formatLoanWan(savedInterest);
+    $("loanEqualPaymentInterest").textContent = formatLoanWan(equalPaymentInterest);
+    $("loanEqualPrincipalInterest").textContent = formatLoanWan(equalPrincipalInterest);
+    renderLoanPrepayments(baseInterest, principal, years, monthlyRate, method, baseSchedule.length);
+    $("loanScheduleBody").innerHTML = schedule.map((row) => `
+      <tr>
+        <td>${row.month}</td>
+        <td class="num">${formatMoney(row.payment)}</td>
+        <td class="num">${formatMoney(row.principal)}</td>
+        <td class="num">${formatMoney(row.interest)}</td>
+        <td class="num">${formatMoney(row.cumulativeInterest)}</td>
+        <td class="num">${row.extraPrincipal ? formatMoney(row.extraPrincipal) : ""}</td>
+        <td class="num">${formatMoney(row.balance)}</td>
+        <td><button class="secondary loan-prepay-at-btn" type="button" data-month="${row.month}">提前还款</button></td>
+      </tr>
+    `).join("");
+  } catch (error) {
+    $("loanPrincipalTotal").textContent = "0.00";
+    $("loanInterestTotal").textContent = "0.00";
+    $("loanPaymentTotal").textContent = "0.00";
+    $("loanMonthCount").textContent = "0";
+    $("loanSavedInterestTotal").textContent = "0.00";
+    $("loanPrepaySavedTotal").textContent = "0.00";
+    $("loanEqualPaymentInterest").textContent = "0.00";
+    $("loanEqualPrincipalInterest").textContent = "0.00";
+    $("loanPrepaymentBody").innerHTML = "";
+    $("loanScheduleBody").innerHTML = "";
+    toast(error.message);
+  }
+}
+
+function singlePrepaymentSavedInterest(baseInterest, principal, years, monthlyRate, method, item) {
+  const schedule = buildLoanSchedule(principal, years, monthlyRate, method, [{ month: item.month, amount: item.amount }]);
+  const interest = schedule.reduce((sum, row) => sum + row.interest, 0);
+  return Math.max(0, baseInterest - interest);
+}
+
+function renderLoanPrepayments(baseInterest, principal, years, monthlyRate, method, maxMonth) {
+  $("loanPrepaymentBody").innerHTML = state.loanPrepayments.map((item, index) => {
+    const month = Math.round(Number(item.month));
+    const amount = Number(item.amountWan) * 10000;
+    const valid = Number.isInteger(month) && month >= 1 && month <= maxMonth && Number.isFinite(amount) && amount > 0;
+    const saved = valid ? singlePrepaymentSavedInterest(baseInterest, principal, years, monthlyRate, method, { month, amount }) : 0;
+    return `
+      <tr data-index="${index}">
+        <td><input class="loan-prepay-month" type="number" min="1" max="${maxMonth}" step="1" value="${escapeHtml(item.month || "")}"></td>
+        <td><input class="loan-prepay-amount" type="number" min="0" step="0.01" value="${escapeHtml(item.amountWan || "")}"></td>
+        <td class="num">${valid ? formatLoanWan(saved) : "-"}</td>
+        <td><button class="danger delete-loan-prepay-btn" type="button">删除</button></td>
+      </tr>
+    `;
+  }).join("");
+}
 
 function isIncome(record) {
   return String(record.type || "").includes("收入");
@@ -186,11 +330,17 @@ function updateFormOptions(scope = document) {
 }
 
 function entryRowHtml(record = {}) {
-  const type = byType.includes(record.type) ? record.type : byType[0];
+  const data = {
+    ...record,
+    type: record.type || DEFAULT_ENTRY_RECORD.type,
+    name1: record.name1 || DEFAULT_ENTRY_RECORD.name1,
+    name2: record.name2 || DEFAULT_ENTRY_RECORD.name2,
+  };
+  const type = byType.includes(data.type) ? data.type : byType[0];
   const name1s = groupOptions(CATEGORIES, 1, { 0: type });
-  const name1 = name1s.includes(record.name1) ? record.name1 : name1s[0];
+  const name1 = name1s.includes(data.name1) ? data.name1 : name1s[0];
   const name2s = groupOptions(CATEGORIES, 2, { 0: type, 1: name1 });
-  const name2 = name2s.includes(record.name2) ? record.name2 : name2s[0];
+  const name2 = name2s.includes(data.name2) ? data.name2 : name2s[0];
   const options = (values, selected) => values.map((value) => (
     `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`
   )).join("");
@@ -286,17 +436,27 @@ function renderDiaryCalendar() {
   $("diaryCalendar").innerHTML = [...heads, ...blanks, ...cells].join("");
 }
 
-async function loadDiary(date = state.diary.date) {
-  const payload = await requestJson(`/api/diary?date=${encodeURIComponent(date)}`);
-  state.diary.date = payload.diary.date;
-  state.diary.month = payload.diary.date.slice(0, 7);
-  state.diary.markedDates = payload.diary.markedDates || [];
-  state.diary.ganzhiDays = payload.diary.ganzhiDays || {};
-  $("diaryDateTitle").textContent = `写日记：${payload.diary.date}`;
-  $("diaryPathText").textContent = payload.diary.path;
-  $("diaryText").value = payload.diary.text;
-  state.diary.lastSavedText = payload.diary.text;
+function showDiary(diary) {
+  state.diary.date = diary.date;
+  state.diary.month = diary.date.slice(0, 7);
+  state.diary.markedDates = diary.markedDates || state.diary.markedDates || [];
+  state.diary.ganzhiDays = diary.ganzhiDays || state.diary.ganzhiDays || {};
+  $("diaryDateTitle").textContent = `写日记：${diary.date}`;
+  $("diaryPathText").textContent = diary.path || "";
+  $("diaryText").value = diary.text;
+  state.diary.lastSavedText = diary.savedText ?? diary.text;
   renderDiaryCalendar();
+}
+
+async function loadDiary(date = state.diary.date, options = {}) {
+  const cached = state.diary.drafts[date];
+  if (cached && !options.force) {
+    showDiary(cached);
+    return;
+  }
+  const payload = await requestJson(`/api/diary?date=${encodeURIComponent(date)}`);
+  state.diary.drafts[date] = { ...payload.diary, savedText: payload.diary.text };
+  showDiary(state.diary.drafts[date]);
 }
 
 function diaryHasChanges() {
@@ -306,17 +466,30 @@ function diaryHasChanges() {
 async function saveDiary(options = {}) {
   if (!diaryHasChanges() && !options.force) return null;
   if (state.diary.saving) await state.diary.saving;
+  const date = state.diary.date;
+  const submittedText = $("diaryText").value;
   try {
     state.diary.saving = requestJson("/api/diary", {
       method: "POST",
-      body: JSON.stringify({ date: state.diary.date, text: $("diaryText").value }),
+      body: JSON.stringify({ date, text: submittedText, overwrite: Boolean(options.overwrite) }),
     });
     const payload = await state.diary.saving;
-    state.diary.markedDates = payload.diary.markedDates || [];
-    $("diaryText").value = payload.diary.text;
-    state.diary.lastSavedText = payload.diary.text;
-    $("diaryPathText").textContent = payload.diary.path;
-    renderDiaryCalendar();
+    const isCurrentDate = state.diary.date === date;
+    const hasNewInput = isCurrentDate && $("diaryText").value !== submittedText;
+    const keepEditorText = isCurrentDate && (options.silent || hasNewInput);
+    state.diary.drafts[date] = {
+      ...payload.diary,
+      text: keepEditorText ? $("diaryText").value : payload.diary.text,
+      savedText: payload.diary.text,
+    };
+    if (isCurrentDate) {
+      state.diary.markedDates = payload.diary.markedDates || [];
+      state.diary.ganzhiDays = payload.diary.ganzhiDays || state.diary.ganzhiDays;
+      state.diary.lastSavedText = payload.diary.text;
+      $("diaryPathText").textContent = payload.diary.path;
+      if (!keepEditorText) $("diaryText").value = payload.diary.text;
+      renderDiaryCalendar();
+    }
     if (!options.silent) toast("日记已保存");
     return payload;
   } finally {
@@ -325,13 +498,21 @@ async function saveDiary(options = {}) {
 }
 
 function queueDiaryAutoSave() {
+  state.diary.drafts[state.diary.date] = {
+    ...(state.diary.drafts[state.diary.date] || {}),
+    date: state.diary.date,
+    text: $("diaryText").value,
+    savedText: state.diary.lastSavedText,
+    path: $("diaryPathText").textContent,
+    markedDates: state.diary.markedDates,
+    ganzhiDays: state.diary.ganzhiDays,
+  };
   clearTimeout(state.diary.autoSaveTimer);
-  state.diary.autoSaveTimer = setTimeout(() => {
-    saveDiary({ silent: true }).catch((error) => toast(error.message));
-  }, 1200);
+  state.diary.autoSaveTimer = null;
 }
 
 async function switchDiaryDate(date) {
+  if (date === state.diary.date) return;
   clearTimeout(state.diary.autoSaveTimer);
   await saveDiary({ silent: true });
   await loadDiary(date);
@@ -1386,11 +1567,12 @@ function bindEvents() {
           [name, row.querySelector(`[name='${name}']`).value]
         )))
       ));
-      await requestJson("/api/records", { method: "POST", body: JSON.stringify({ records }) });
+      const payload = await requestJson("/api/records", { method: "POST", body: JSON.stringify({ records }) });
       includeSavedRecordDates(records);
       await loadRecords();
       fillEntryForms([{}]);
-      toast(`已追加 ${records.length} 条到账表`);
+      const skipped = payload.skippedDuplicateCount || 0;
+      toast(skipped ? `已追加 ${payload.addedCount} 条到账表，跳过 ${skipped} 条重复` : `已追加 ${payload.addedCount} 条到账表`);
     } catch (error) {
       toast(`保存到账表失败：${error.message}`);
     } finally {
@@ -1399,6 +1581,44 @@ function bindEvents() {
         submitButton.textContent = "全部保存到账表";
       }
     }
+  });
+  for (const id of ["loanAmount", "loanYears", "loanRateType", "loanRate", "loanMethod"]) {
+    $(id).addEventListener("input", renderLoanAnalysis);
+    $(id).addEventListener("change", renderLoanAnalysis);
+  }
+  $("loanCalcBtn").addEventListener("click", renderLoanAnalysis);
+  $("addLoanPrepaymentBtn").addEventListener("click", () => {
+    state.loanPrepayments.push({ month: "1", amountWan: "" });
+    renderLoanAnalysis();
+  });
+  $("loanPrepaymentBody").addEventListener("change", (event) => {
+    const tr = event.target.closest("tr");
+    if (!tr) return;
+    const item = state.loanPrepayments[Number(tr.dataset.index)];
+    if (!item) return;
+    if (event.target.classList.contains("loan-prepay-month")) item.month = event.target.value;
+    if (event.target.classList.contains("loan-prepay-amount")) item.amountWan = event.target.value;
+    renderLoanAnalysis();
+  });
+  $("loanPrepaymentBody").addEventListener("click", (event) => {
+    if (!event.target.classList.contains("delete-loan-prepay-btn")) return;
+    const tr = event.target.closest("tr");
+    state.loanPrepayments.splice(Number(tr.dataset.index), 1);
+    renderLoanAnalysis();
+  });
+  $("loanScheduleBody").addEventListener("click", (event) => {
+    if (!event.target.classList.contains("loan-prepay-at-btn")) return;
+    const month = event.target.dataset.month;
+    const existing = state.loanPrepayments.find((item) => String(item.month) === String(month));
+    if (existing) {
+      existing.amountWan = existing.amountWan || "";
+    } else {
+      state.loanPrepayments.push({ month, amountWan: "" });
+    }
+    renderLoanAnalysis();
+    const row = [...$("loanPrepaymentBody").querySelectorAll("tr")]
+      .find((tr) => tr.querySelector(".loan-prepay-month")?.value === String(month));
+    row?.querySelector(".loan-prepay-amount")?.focus();
   });
   $("categoryAddBody").addEventListener("input", (event) => {
     const tr = event.target.closest("tr");
@@ -1471,19 +1691,16 @@ function bindEvents() {
   $("previousMonthBtn").addEventListener("click", () => changeMonth(-1));
   $("nextMonthBtn").addEventListener("click", () => changeMonth(1));
   $("diaryPreviousMonthBtn").addEventListener("click", () => {
-    state.diary.month = shiftMonth(state.diary.month, -1);
-    state.diary.date = `${state.diary.month}-01`;
-    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+    const targetMonth = shiftMonth(state.diary.month, -1);
+    switchDiaryDate(`${targetMonth}-01`).catch((error) => toast(error.message));
   });
   $("diaryNextMonthBtn").addEventListener("click", () => {
-    state.diary.month = shiftMonth(state.diary.month, 1);
-    state.diary.date = `${state.diary.month}-01`;
-    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+    const targetMonth = shiftMonth(state.diary.month, 1);
+    switchDiaryDate(`${targetMonth}-01`).catch((error) => toast(error.message));
   });
   $("diaryMonthPicker").addEventListener("change", (event) => {
-    state.diary.month = event.target.value || currentMonthText();
-    state.diary.date = `${state.diary.month}-01`;
-    switchDiaryDate(state.diary.date).catch((error) => toast(error.message));
+    const targetMonth = event.target.value || currentMonthText();
+    switchDiaryDate(`${targetMonth}-01`).catch((error) => toast(error.message));
   });
   $("diaryCalendar").addEventListener("click", (event) => {
     const button = event.target.closest("[data-date]");
@@ -1493,7 +1710,21 @@ function bindEvents() {
   $("saveDiaryBtn").addEventListener("click", () => {
     saveDiary().catch((error) => toast(error.message));
   });
+  $("overwriteDiaryBtn").addEventListener("click", () => {
+    if (!confirm(`确认用当前文本覆盖 ${state.diary.date} 的原日记吗？`)) return;
+    saveDiary({ force: true, overwrite: true }).catch((error) => toast(error.message));
+  });
   $("diaryText").addEventListener("input", queueDiaryAutoSave);
+  document.addEventListener("keydown", (event) => {
+    if (state.page !== "diary" || event.key.toLowerCase() !== "s" || (!event.ctrlKey && !event.metaKey)) return;
+    event.preventDefault();
+    if (event.shiftKey) {
+      if (!confirm(`确认用当前文本覆盖 ${state.diary.date} 的原日记吗？`)) return;
+      saveDiary({ force: true, overwrite: true }).catch((error) => toast(error.message));
+      return;
+    }
+    saveDiary().catch((error) => toast(error.message));
+  });
   window.addEventListener("beforeunload", saveDiaryBeforeUnload);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveDiaryBeforeUnload();
@@ -1642,6 +1873,7 @@ $("monthPicker").value = currentMonthText();
 setThisWeek();
 setPage("book");
 bindEvents();
+renderLoanAnalysis();
 loadRecords().catch((error) => toast(error.message));
 loadCategories().catch((error) => toast(error.message));
 loadFunds();

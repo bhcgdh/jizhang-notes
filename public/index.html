@@ -28,6 +28,7 @@
       <button class="nav-btn" type="button" data-page="month">月账单</button>
       <button class="nav-btn" type="button" data-page="category">品类分析</button>
       <button class="nav-btn" type="button" data-page="categoryManage">分类管理</button>
+      <button class="nav-btn" type="button" data-page="loan">贷款分析</button>
       <button class="nav-btn" type="button" data-page="diary">写日记</button>
     </nav>
 
@@ -432,6 +433,88 @@
       </section>
     </section>
 
+    <section class="page" id="loanPage">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>贷款分析</h2>
+            <p>根据总金额、年限和利率生成每月还款计划，支持等额本金和等额本息。</p>
+          </div>
+          <button id="loanCalcBtn" type="button">重新计算</button>
+        </div>
+        <div class="loan-form">
+          <label>贷款总金额（万元）<input id="loanAmount" type="number" min="0" step="0.01" value="100"></label>
+          <label>贷款年限<input id="loanYears" type="number" min="1" step="1" value="30"></label>
+          <label>利率类型<select id="loanRateType">
+            <option value="annual">年化利率</option>
+            <option value="daily">日利率</option>
+          </select></label>
+          <label>利率（%）<input id="loanRate" type="number" min="0" step="0.0001" value="3.5"></label>
+          <label>还款方式<select id="loanMethod">
+            <option value="equalPayment">等额本息</option>
+            <option value="equalPrincipal">等额本金</option>
+          </select></label>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <div class="metric"><span>贷款本金（万元）</span><strong id="loanPrincipalTotal">0.00</strong></div>
+        <div class="metric"><span>总利息（万元）</span><strong id="loanInterestTotal">0.00</strong></div>
+        <div class="metric"><span>总还款（万元）</span><strong id="loanPaymentTotal">0.00</strong></div>
+        <div class="metric"><span>还款月数</span><strong id="loanMonthCount">0</strong></div>
+        <div class="metric"><span>节省利息（万元）</span><strong id="loanSavedInterestTotal">0.00</strong></div>
+        <div class="metric"><span>等额本息总利息（万元）</span><strong id="loanEqualPaymentInterest">0.00</strong></div>
+        <div class="metric"><span>等额本金总利息（万元）</span><strong id="loanEqualPrincipalInterest">0.00</strong></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>提前还款</h2>
+            <p>默认按“保持原月供/原每月本金不变，缩短还款期数”计算节省利息。</p>
+          </div>
+          <div class="loan-prepay-actions">
+            <span class="summary-pill">总节省利息：<strong id="loanPrepaySavedTotal">0.00</strong> 万元</span>
+            <button id="addLoanPrepaymentBtn" class="secondary" type="button">增加提前还款</button>
+          </div>
+        </div>
+        <div class="table-wrap loan-prepay-table">
+          <table>
+            <thead>
+              <tr>
+                <th>还款期数</th>
+                <th>提前还款金额（万元）</th>
+                <th>单独节省利息（万元）</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="loanPrepaymentBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>每月还款明细</h2>
+        <div class="table-wrap loan-table">
+          <table>
+            <thead>
+              <tr>
+                <th>期数</th>
+                <th>每月还款</th>
+                <th>本金</th>
+                <th>利息</th>
+                <th>累计利息</th>
+                <th>提前还款</th>
+                <th>剩余本金</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="loanScheduleBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
     <section class="page" id="diaryPage">
       <section class="diary-layout">
         <div class="panel diary-calendar-panel">
@@ -452,7 +535,10 @@
               <h2 id="diaryDateTitle">写日记</h2>
               <p id="diaryPathText" class="muted-text"></p>
             </div>
-            <button id="saveDiaryBtn" type="button">保存日记</button>
+            <div class="action-row">
+              <button id="saveDiaryBtn" type="button" title="Ctrl+S">保存日记</button>
+              <button id="overwriteDiaryBtn" class="secondary" type="button" title="Ctrl+Shift+S">确认修改</button>
+            </div>
           </div>
           <textarea id="diaryText" class="diary-textarea" rows="20"></textarea>
         </div>

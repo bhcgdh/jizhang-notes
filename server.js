@@ -11,7 +11,9 @@ const BASE_PORT = Number(process.env.PORT || 5174);
 
 let csvPath = process.env.CSV_PATH || "F:\\daysz\\dfsz.csv";
 let fundsPath = process.env.FUNDS_XLSX_PATH || "F:\\daysz\\hisdata\\mark1.xlsx";
-const DIARY_DIR = process.env.DIARY_DIR || "F:\\zz_codexs\\本地日记\\data";
+const DIARY_DIR = process.env.DIARY_DIR || path.join(__dirname, "datas", "dairy");
+const EXPERIENCE_DIR = process.env.EXPERIENCE_DIR || path.join(__dirname, "datas", "experience");
+const EXPERIENCE_PATH = path.join(EXPERIENCE_DIR, "experiences.json");
 const LLM_BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const LLM_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -296,7 +298,7 @@ function pruneDiaryBackups(filePath) {
       return { path: fullPath, time: fs.statSync(fullPath).mtimeMs };
     })
     .sort((a, b) => b.time - a.time);
-  for (const backup of backups.slice(5)) {
+  for (const backup of backups.slice(10)) {
     fs.unlinkSync(backup.path);
   }
 }
@@ -307,6 +309,82 @@ function backupDiaryFile(filePath) {
   fs.copyFileSync(filePath, backupPath);
   pruneDiaryBackups(filePath);
   return backupPath;
+}
+
+function readExperiences() {
+  if (!fs.existsSync(EXPERIENCE_PATH)) return [];
+  const text = fs.readFileSync(EXPERIENCE_PATH, "utf8").replace(/^\uFEFF/, "").trim();
+  if (!text) return [];
+  const rows = JSON.parse(text);
+  if (!Array.isArray(rows)) throw new Error("经验数据格式无效");
+  return rows;
+}
+
+function backupExperiences() {
+  if (!fs.existsSync(EXPERIENCE_PATH) || fs.statSync(EXPERIENCE_PATH).size === 0) return null;
+  const backupDir = path.join(EXPERIENCE_DIR, "backup");
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").replace(/\..+$/, "");
+  fs.mkdirSync(backupDir, { recursive: true });
+  let backupPath = path.join(backupDir, `experiences_${stamp}.json`);
+  let index = 1;
+  while (fs.existsSync(backupPath)) {
+    backupPath = path.join(backupDir, `experiences_${stamp}_${index}.json`);
+    index += 1;
+  }
+  fs.copyFileSync(EXPERIENCE_PATH, backupPath);
+  const backups = fs.readdirSync(backupDir)
+    .filter((name) => /^experiences_\d{14}(?:_\d+)?\.json$/.test(name))
+    .map((name) => {
+      const fullPath = path.join(backupDir, name);
+      return { path: fullPath, time: fs.statSync(fullPath).mtimeMs };
+    })
+    .sort((a, b) => b.time - a.time);
+  for (const backup of backups.slice(10)) fs.unlinkSync(backup.path);
+  return backupPath;
+}
+
+function writeExperiences(rows) {
+  fs.mkdirSync(EXPERIENCE_DIR, { recursive: true });
+  backupExperiences();
+  const temporaryPath = `${EXPERIENCE_PATH}.tmp`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(rows, null, 2)}\n`, "utf8");
+  fs.renameSync(temporaryPath, EXPERIENCE_PATH);
+}
+
+function addExperience(payload) {
+  const title = String(payload.title || "").trim();
+  const content = String(payload.content || "").trim();
+  const tags = [...new Set(
+    (Array.isArray(payload.tags) ? payload.tags : String(payload.tags || "").split(/[,，]/))
+      .map((tag) => String(tag).trim())
+      .filter(Boolean),
+  )];
+  if (!title) throw new Error("请输入经验标题");
+  if (!content) throw new Error("请输入经验内容");
+  const rows = readExperiences();
+  rows.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    title,
+    tags,
+    content,
+  });
+  writeExperiences(rows);
+  return rows;
+}
+
+function updateExperience(payload) {
+  const id = String(payload.id || "").trim();
+  const content = String(payload.content || "").trim();
+  if (!id) throw new Error("经验记录 ID 无效");
+  if (!content) throw new Error("经验内容不能为空");
+  const rows = readExperiences();
+  const row = rows.find((item) => item.id === id);
+  if (!row) throw new Error("找不到要修改的经验记录");
+  row.content = content;
+  row.updatedAt = new Date().toISOString();
+  writeExperiences(rows);
+  return rows;
 }
 
 function normalizeDiaryText(text) {
@@ -905,6 +983,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/experiences") {
+      sendJson(res, 200, { experiences: readExperiences() });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/csv-path") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, { path: setCsvPath(payload.path), records: readRecords() });
@@ -958,6 +1041,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/diary") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, { diary: saveDiary(payload) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/experiences") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { experiences: addExperience(payload) });
+      return;
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/experiences") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { experiences: updateExperience(payload) });
       return;
     }
 

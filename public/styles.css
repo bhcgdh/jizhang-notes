@@ -879,6 +879,103 @@ td .delete-btn { min-height: 34px; }
   resize: vertical;
 }
 
+.experience-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.experience-form .wide {
+  grid-column: 1 / -1;
+}
+
+.experience-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.experience-tag {
+  min-height: 34px;
+  padding: 6px 14px;
+  color: var(--text);
+  background: #fffaf3;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.experience-tag.active {
+  color: #254d77;
+  background: #d9ecff;
+  border-color: var(--accent-dark);
+}
+
+.experience-table {
+  min-width: 1040px;
+}
+
+.experience-table-wrap {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.experience-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
+.experience-title-filter {
+  width: min(320px, 100%);
+}
+
+.experience-table th:first-child {
+  width: 160px;
+}
+
+.experience-table th:nth-child(2) {
+  width: 180px;
+}
+
+.experience-table th:nth-child(3) {
+  width: 160px;
+}
+
+.experience-content {
+  min-width: 360px;
+  line-height: 1.7;
+}
+
+.experience-content-editor {
+  min-width: 360px;
+  min-height: 76px;
+  max-height: 76px;
+  line-height: 1.7;
+  resize: vertical;
+  transition: min-height 0.18s ease;
+}
+
+.experience-content-editor.expanded {
+  min-height: 240px;
+  max-height: none;
+  resize: vertical;
+}
+
+.save-experience-content-btn {
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.empty-text {
+  color: var(--muted);
+  text-align: center;
+}
+
 .action-row {
   display: flex;
   gap: 8px;
@@ -975,4 +1072,5 @@ td .delete-btn { min-height: 34px; }
   .inline-path-panel { grid-template-columns: 1fr; }
   .diary-layout { grid-template-columns: 1fr; }
   .loan-form { grid-template-columns: 1fr; }
+  .experience-form { grid-template-columns: 1fr; }
 }

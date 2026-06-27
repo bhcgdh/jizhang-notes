@@ -30,6 +30,7 @@
       <button class="nav-btn" type="button" data-page="categoryManage">分类管理</button>
       <button class="nav-btn" type="button" data-page="loan">贷款分析</button>
       <button class="nav-btn" type="button" data-page="diary">写日记</button>
+      <button class="nav-btn" type="button" data-page="experience">日常经验</button>
     </nav>
 
     <section class="page active" id="bookPage">
@@ -541,6 +542,47 @@
             </div>
           </div>
           <textarea id="diaryText" class="diary-textarea" rows="20"></textarea>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="experiencePage">
+      <section class="panel">
+        <h2>新增日常经验</h2>
+        <form id="experienceForm" class="experience-form">
+          <label>标题<input id="experienceTitle" type="text" required placeholder="简要说明这条经验"></label>
+          <label>标签<input id="experienceTags" type="text" placeholder="多个标签用逗号分隔"></label>
+          <label class="wide">完整内容<textarea id="experienceContent" rows="6" required placeholder="记录过程、结论和注意事项"></textarea></label>
+          <button type="submit">保存经验</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>经验标签</h2>
+          <span id="experienceCount" class="muted-text"></span>
+        </div>
+        <div id="experienceTagList" class="experience-tags"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>经验内容</h2>
+          <label class="experience-title-filter">标题筛选<input id="experienceTitleFilter" type="search" placeholder="输入标题关键字"></label>
+        </div>
+        <div class="table-wrap experience-table-wrap">
+          <table class="experience-table">
+            <thead>
+              <tr>
+                <th>记录时间</th>
+                <th>标题</th>
+                <th>标签</th>
+                <th>完整内容</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="experienceBody"></tbody>
+          </table>
         </div>
       </section>
     </section>

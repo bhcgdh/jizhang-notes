@@ -84,6 +84,9 @@ const state = {
   categoryExistingRows: [],
   categoryAddRows: [["", "", ""]],
   loanPrepayments: [],
+  experiences: [],
+  experienceTag: "all",
+  experienceTitleFilter: "",
   diary: {
     date: todayText(),
     month: currentMonthText(),
@@ -388,6 +391,39 @@ async function loadRecords() {
   state.records = payload.records;
   $("csvPathInput").value = payload.path;
   render();
+}
+
+function renderExperiences() {
+  const tags = [...new Set(state.experiences.flatMap((item) => item.tags || []))]
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (state.experienceTag !== "all" && !tags.includes(state.experienceTag)) {
+    state.experienceTag = "all";
+  }
+  $("experienceTagList").innerHTML = [
+    `<button class="experience-tag${state.experienceTag === "all" ? " active" : ""}" type="button" data-tag="all">全部</button>`,
+    ...tags.map((tag) => `<button class="experience-tag${state.experienceTag === tag ? " active" : ""}" type="button" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`),
+  ].join("");
+  const tagRows = state.experienceTag === "all"
+    ? state.experiences
+    : state.experiences.filter((item) => (item.tags || []).includes(state.experienceTag));
+  const titleFilter = state.experienceTitleFilter.trim().toLowerCase();
+  const rows = tagRows.filter((item) => !titleFilter || String(item.title || "").toLowerCase().includes(titleFilter));
+  $("experienceCount").textContent = `${rows.length} 条`;
+  $("experienceBody").innerHTML = [...rows].reverse().map((item) => `
+    <tr data-id="${escapeHtml(item.id)}">
+      <td>${escapeHtml(new Date(item.createdAt).toLocaleString("zh-CN", { hour12: false }))}</td>
+      <td>${escapeHtml(item.title)}</td>
+      <td>${escapeHtml((item.tags || []).join("、"))}</td>
+      <td class="experience-content"><textarea class="experience-content-editor" rows="3" title="点击展开完整内容">${escapeHtml(item.content)}</textarea></td>
+      <td><button class="secondary save-experience-content-btn" type="button">保存</button></td>
+    </tr>
+  `).join("") || '<tr><td colspan="5" class="empty-text">暂无经验记录</td></tr>';
+}
+
+async function loadExperiences() {
+  const payload = await requestJson("/api/experiences");
+  state.experiences = payload.experiences;
+  renderExperiences();
 }
 
 function ganzhiHtml(text) {
@@ -1519,6 +1555,80 @@ function bindEvents() {
       setPage(button.dataset.page).catch((error) => toast(error.message));
     });
   });
+  $("experienceForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      const payload = await requestJson("/api/experiences", {
+        method: "POST",
+        body: JSON.stringify({
+          title: $("experienceTitle").value,
+          tags: $("experienceTags").value,
+          content: $("experienceContent").value,
+        }),
+      });
+      state.experiences = payload.experiences;
+      state.experienceTag = "all";
+      form.reset();
+      renderExperiences();
+      toast("经验已保存");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("experienceTagList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tag]");
+    if (!button) return;
+    state.experienceTag = button.dataset.tag;
+    renderExperiences();
+  });
+  $("experienceTitleFilter").addEventListener("input", (event) => {
+    state.experienceTitleFilter = event.target.value;
+    renderExperiences();
+  });
+  $("experienceBody").addEventListener("focusin", (event) => {
+    if (!event.target.classList.contains("experience-content-editor")) return;
+    for (const editor of $("experienceBody").querySelectorAll(".experience-content-editor.expanded")) {
+      if (editor !== event.target) {
+        editor.classList.remove("expanded");
+        editor.style.height = "";
+      }
+    }
+    event.target.classList.add("expanded");
+    event.target.style.height = "auto";
+    event.target.style.height = `${event.target.scrollHeight + 2}px`;
+  });
+  $("experienceBody").addEventListener("input", (event) => {
+    if (!event.target.classList.contains("experience-content-editor") || !event.target.classList.contains("expanded")) return;
+    event.target.style.height = "auto";
+    event.target.style.height = `${event.target.scrollHeight + 2}px`;
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest(".experience-content-editor")) return;
+    for (const editor of $("experienceBody").querySelectorAll(".experience-content-editor.expanded")) {
+      editor.classList.remove("expanded");
+      editor.style.height = "";
+    }
+  });
+  $("experienceBody").addEventListener("click", async (event) => {
+    const button = event.target.closest(".save-experience-content-btn");
+    if (!button) return;
+    const row = button.closest("tr");
+    try {
+      const payload = await requestJson("/api/experiences", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: row.dataset.id,
+          content: row.querySelector(".experience-content-editor").value,
+        }),
+      });
+      state.experiences = payload.experiences;
+      renderExperiences();
+      toast("经验内容已更新");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
   $("entryForm").addEventListener("change", (event) => {
     if (!event.target.matches("[name='type'], [name='name1']")) return;
     updateFormOptions(event.target.closest(".entry-row"));
@@ -1878,3 +1988,4 @@ loadRecords().catch((error) => toast(error.message));
 loadCategories().catch((error) => toast(error.message));
 loadFunds();
 loadDiary().catch((error) => toast(error.message));
+loadExperiences().catch((error) => toast(error.message));

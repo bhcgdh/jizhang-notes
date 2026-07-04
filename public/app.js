@@ -87,6 +87,7 @@ const state = {
   experiences: [],
   experienceTag: "all",
   experienceTitleFilter: "",
+  todoWishes: [],
   diary: {
     date: todayText(),
     month: currentMonthText(),
@@ -424,6 +425,36 @@ async function loadExperiences() {
   const payload = await requestJson("/api/experiences");
   state.experiences = payload.experiences;
   renderExperiences();
+}
+
+function renderTodoWishes() {
+  $("todoWishCount").textContent = `${state.todoWishes.length} 条`;
+  $("todoWishBody").innerHTML = [...state.todoWishes].reverse().map((item) => `
+    <tr data-id="${escapeHtml(item.id)}" class="${item.completed ? "completed" : ""}">
+      <td>
+        <select class="todo-wish-type">
+          <option value="todo" ${item.type === "todo" ? "selected" : ""}>待办</option>
+          <option value="wish" ${item.type === "wish" ? "selected" : ""}>心愿</option>
+        </select>
+      </td>
+      <td><input class="todo-wish-title" type="text" value="${escapeHtml(item.title)}"></td>
+      <td><textarea class="todo-wish-content" rows="3">${escapeHtml(item.content || "")}</textarea></td>
+      <td><input class="todo-wish-completed" type="checkbox" ${item.completed ? "checked" : ""} aria-label="完成"></td>
+      <td>${escapeHtml(new Date(item.createdAt).toLocaleString("zh-CN", { hour12: false }))}</td>
+      <td>
+        <div class="todo-wish-actions">
+          <button class="secondary save-todo-wish-btn" type="button">保存</button>
+          <button class="danger delete-todo-wish-btn" type="button">删除</button>
+        </div>
+      </td>
+    </tr>
+  `).join("") || '<tr><td colspan="6" class="empty-text">暂无待办或心愿</td></tr>';
+}
+
+async function loadTodoWishes() {
+  const payload = await requestJson("/api/todo-wishes");
+  state.todoWishes = payload.items;
+  renderTodoWishes();
 }
 
 function ganzhiHtml(text) {
@@ -1629,6 +1660,63 @@ function bindEvents() {
       toast(error.message);
     }
   });
+  $("todoWishForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      const payload = await requestJson("/api/todo-wishes", {
+        method: "POST",
+        body: JSON.stringify({
+          type: $("todoWishType").value,
+          title: $("todoWishTitle").value,
+          content: $("todoWishContent").value,
+        }),
+      });
+      state.todoWishes = payload.items;
+      form.reset();
+      renderTodoWishes();
+      toast("已新增");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("todoWishBody").addEventListener("click", async (event) => {
+    const row = event.target.closest("tr[data-id]");
+    if (!row) return;
+    if (event.target.closest(".save-todo-wish-btn")) {
+      try {
+        const payload = await requestJson("/api/todo-wishes", {
+          method: "PUT",
+          body: JSON.stringify({
+            id: row.dataset.id,
+            type: row.querySelector(".todo-wish-type").value,
+            title: row.querySelector(".todo-wish-title").value,
+            content: row.querySelector(".todo-wish-content").value,
+            completed: row.querySelector(".todo-wish-completed").checked,
+          }),
+        });
+        state.todoWishes = payload.items;
+        renderTodoWishes();
+        toast("修改已保存");
+      } catch (error) {
+        toast(error.message);
+      }
+      return;
+    }
+    if (!event.target.closest(".delete-todo-wish-btn")) return;
+    if (!confirm("确认删除这条待办或心愿吗？")) return;
+    try {
+      const payload = await requestJson("/api/todo-wishes", {
+        method: "DELETE",
+        body: JSON.stringify({ id: row.dataset.id }),
+      });
+      state.todoWishes = payload.items;
+      renderTodoWishes();
+      toast("已删除");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
   $("entryForm").addEventListener("change", (event) => {
     if (!event.target.matches("[name='type'], [name='name1']")) return;
     updateFormOptions(event.target.closest(".entry-row"));
@@ -1989,3 +2077,4 @@ loadCategories().catch((error) => toast(error.message));
 loadFunds();
 loadDiary().catch((error) => toast(error.message));
 loadExperiences().catch((error) => toast(error.message));
+loadTodoWishes().catch((error) => toast(error.message));

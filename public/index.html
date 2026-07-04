@@ -31,6 +31,7 @@
       <button class="nav-btn" type="button" data-page="loan">贷款分析</button>
       <button class="nav-btn" type="button" data-page="diary">写日记</button>
       <button class="nav-btn" type="button" data-page="experience">日常经验</button>
+      <button class="nav-btn" type="button" data-page="todoWish">待办心愿</button>
     </nav>
 
     <section class="page active" id="bookPage">
@@ -582,6 +583,45 @@
               </tr>
             </thead>
             <tbody id="experienceBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="todoWishPage">
+      <section class="panel">
+        <h2>新增待办或心愿</h2>
+        <form id="todoWishForm" class="todo-wish-form">
+          <label>类型
+            <select id="todoWishType">
+              <option value="todo">待办</option>
+              <option value="wish">心愿</option>
+            </select>
+          </label>
+          <label>标题<input id="todoWishTitle" type="text" required placeholder="输入待办或心愿标题"></label>
+          <label class="wide">详细内容<textarea id="todoWishContent" rows="4" placeholder="补充说明，可不填"></textarea></label>
+          <button type="submit">新增</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>待办心愿列表</h2>
+          <span id="todoWishCount" class="muted-text"></span>
+        </div>
+        <div class="table-wrap todo-wish-table-wrap">
+          <table class="todo-wish-table">
+            <thead>
+              <tr>
+                <th>类型</th>
+                <th>标题</th>
+                <th>详细内容</th>
+                <th>完成</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="todoWishBody"></tbody>
           </table>
         </div>
       </section>

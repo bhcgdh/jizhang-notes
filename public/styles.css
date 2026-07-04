@@ -971,6 +971,69 @@ td .delete-btn { min-height: 34px; }
   white-space: nowrap;
 }
 
+.todo-wish-form {
+  display: grid;
+  grid-template-columns: 160px minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.todo-wish-form .wide {
+  grid-column: 1 / -1;
+}
+
+.todo-wish-table-wrap {
+  max-height: 600px;
+  overflow: auto;
+}
+
+.todo-wish-table {
+  min-width: 1040px;
+}
+
+.todo-wish-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
+.todo-wish-table th:nth-child(1) { width: 100px; }
+.todo-wish-table th:nth-child(2) { width: 220px; }
+.todo-wish-table th:nth-child(4) { width: 70px; }
+.todo-wish-table th:nth-child(5) { width: 170px; }
+.todo-wish-table th:nth-child(6) { width: 140px; }
+
+.todo-wish-content {
+  min-width: 320px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.todo-wish-completed {
+  width: 20px;
+  height: 20px;
+}
+
+.todo-wish-table tr.completed {
+  opacity: 0.62;
+}
+
+.todo-wish-table tr.completed .todo-wish-title {
+  text-decoration: line-through;
+}
+
+.todo-wish-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.todo-wish-actions button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
 .empty-text {
   color: var(--muted);
   text-align: center;
@@ -1073,4 +1136,5 @@ td .delete-btn { min-height: 34px; }
   .diary-layout { grid-template-columns: 1fr; }
   .loan-form { grid-template-columns: 1fr; }
   .experience-form { grid-template-columns: 1fr; }
+  .todo-wish-form { grid-template-columns: 1fr; }
 }

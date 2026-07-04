@@ -14,6 +14,8 @@ let fundsPath = process.env.FUNDS_XLSX_PATH || "F:\\daysz\\hisdata\\mark1.xlsx";
 const DIARY_DIR = process.env.DIARY_DIR || path.join(__dirname, "datas", "dairy");
 const EXPERIENCE_DIR = process.env.EXPERIENCE_DIR || path.join(__dirname, "datas", "experience");
 const EXPERIENCE_PATH = path.join(EXPERIENCE_DIR, "experiences.json");
+const TODO_WISH_DIR = process.env.TODO_WISH_DIR || path.join(__dirname, "datas", "todo-wishes");
+const TODO_WISH_PATH = path.join(TODO_WISH_DIR, "items.json");
 const LLM_BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const LLM_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -385,6 +387,84 @@ function updateExperience(payload) {
   row.updatedAt = new Date().toISOString();
   writeExperiences(rows);
   return rows;
+}
+
+function readTodoWishes() {
+  if (!fs.existsSync(TODO_WISH_PATH)) return [];
+  const text = fs.readFileSync(TODO_WISH_PATH, "utf8").replace(/^\uFEFF/, "").trim();
+  if (!text) return [];
+  const rows = JSON.parse(text);
+  if (!Array.isArray(rows)) throw new Error("待办心愿数据格式无效");
+  return rows;
+}
+
+function backupTodoWishes() {
+  if (!fs.existsSync(TODO_WISH_PATH) || fs.statSync(TODO_WISH_PATH).size === 0) return null;
+  const backupDir = path.join(TODO_WISH_DIR, "backup");
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").replace(/\..+$/, "");
+  fs.mkdirSync(backupDir, { recursive: true });
+  let backupPath = path.join(backupDir, `items_${stamp}.json`);
+  let index = 1;
+  while (fs.existsSync(backupPath)) {
+    backupPath = path.join(backupDir, `items_${stamp}_${index}.json`);
+    index += 1;
+  }
+  fs.copyFileSync(TODO_WISH_PATH, backupPath);
+  const backups = fs.readdirSync(backupDir)
+    .filter((name) => /^items_\d{14}(?:_\d+)?\.json$/.test(name))
+    .map((name) => {
+      const fullPath = path.join(backupDir, name);
+      return { path: fullPath, time: fs.statSync(fullPath).mtimeMs };
+    })
+    .sort((a, b) => b.time - a.time);
+  for (const backup of backups.slice(10)) fs.unlinkSync(backup.path);
+  return backupPath;
+}
+
+function writeTodoWishes(rows) {
+  fs.mkdirSync(TODO_WISH_DIR, { recursive: true });
+  backupTodoWishes();
+  const temporaryPath = `${TODO_WISH_PATH}.tmp`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(rows, null, 2)}\n`, "utf8");
+  fs.renameSync(temporaryPath, TODO_WISH_PATH);
+}
+
+function normalizeTodoWish(payload) {
+  const type = payload.type === "wish" ? "wish" : "todo";
+  const title = String(payload.title || "").trim();
+  const content = String(payload.content || "").trim();
+  if (!title) throw new Error("请输入标题");
+  return { type, title, content, completed: Boolean(payload.completed) };
+}
+
+function addTodoWish(payload) {
+  const rows = readTodoWishes();
+  rows.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    ...normalizeTodoWish(payload),
+  });
+  writeTodoWishes(rows);
+  return rows;
+}
+
+function updateTodoWish(payload) {
+  const id = String(payload.id || "").trim();
+  const rows = readTodoWishes();
+  const row = rows.find((item) => item.id === id);
+  if (!row) throw new Error("找不到要修改的待办或心愿");
+  Object.assign(row, normalizeTodoWish(payload), { updatedAt: new Date().toISOString() });
+  writeTodoWishes(rows);
+  return rows;
+}
+
+function deleteTodoWish(payload) {
+  const id = String(payload.id || "").trim();
+  const rows = readTodoWishes();
+  const nextRows = rows.filter((item) => item.id !== id);
+  if (nextRows.length === rows.length) throw new Error("找不到要删除的待办或心愿");
+  writeTodoWishes(nextRows);
+  return nextRows;
 }
 
 function normalizeDiaryText(text) {
@@ -988,6 +1068,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/todo-wishes") {
+      sendJson(res, 200, { items: readTodoWishes() });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/csv-path") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, { path: setCsvPath(payload.path), records: readRecords() });
@@ -1053,6 +1138,24 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PUT" && url.pathname === "/api/experiences") {
       const payload = JSON.parse(await readBody(req));
       sendJson(res, 200, { experiences: updateExperience(payload) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/todo-wishes") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { items: addTodoWish(payload) });
+      return;
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/todo-wishes") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { items: updateTodoWish(payload) });
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/todo-wishes") {
+      const payload = JSON.parse(await readBody(req));
+      sendJson(res, 200, { items: deleteTodoWish(payload) });
       return;
     }
 
